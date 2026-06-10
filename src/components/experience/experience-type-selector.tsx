@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Box, Smartphone, Sparkles, Clapperboard } from "lucide-react";
+import { Camera, Box, Smartphone, Sparkles, Clapperboard, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ExperienceType } from "@/types/domain";
 import "@/styles/scene-studio.css";
@@ -13,6 +13,7 @@ type ExperienceOption = {
   badgeVariant?: "default" | "new";
   icon: typeof Camera;
   steps: string;
+  nextLabel: string;
 };
 
 const walkthroughOptions: ExperienceOption[] = [
@@ -23,6 +24,7 @@ const walkthroughOptions: ExperienceOption[] = [
     badge: "Mobile",
     icon: Smartphone,
     steps: "Rooms → capture → connect → publish",
+    nextLabel: "Start capture",
   },
   {
     type: "360_realistic",
@@ -31,6 +33,7 @@ const walkthroughOptions: ExperienceOption[] = [
     badge: "Upload",
     icon: Camera,
     steps: "Panoramas → rooms → hotspots → publish",
+    nextLabel: "Open tour builder",
   },
   {
     type: "worldlabs_splat",
@@ -39,6 +42,7 @@ const walkthroughOptions: ExperienceOption[] = [
     badge: "World Labs",
     icon: Box,
     steps: "Media → generate → review → publish",
+    nextLabel: "Open 3D builder",
   },
   {
     type: "immersive_world",
@@ -47,6 +51,7 @@ const walkthroughOptions: ExperienceOption[] = [
     badge: "Echo 3D",
     icon: Sparkles,
     steps: "Photo → 3D world → annotate → publish",
+    nextLabel: "Open world builder",
   },
 ];
 
@@ -58,56 +63,82 @@ const sceneIntelligenceOption: ExperienceOption = {
   badgeVariant: "new",
   icon: Clapperboard,
   steps: "Images → edit → motion → pins → publish",
+  nextLabel: "Open Scene Studio",
 };
 
 function PickerCard({
   opt,
   active,
-  onSelect,
-  featured = false,
+  disabled,
+  loading,
+  onContinue,
 }: {
   opt: ExperienceOption;
   active: boolean;
-  onSelect: (type: ExperienceType) => void;
-  featured?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  onContinue: (type: ExperienceType) => void;
 }) {
   const Icon = opt.icon;
+  const featured = opt.type === "scene_intelligence";
+
   return (
-    <button type="button" onClick={() => onSelect(opt.type)} className="w-full text-left">
-      <div
-        className={cn("picker-card", featured && "picker-card-featured")}
-        data-active={active}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="picker-icon">
-            <Icon className="h-5 w-5" />
-          </div>
-          <span className={cn("picker-badge", opt.badgeVariant === "new" && "picker-badge-new")}>
-            {opt.badge}
-          </span>
+    <div
+      className={cn("picker-card group", featured && "picker-card-featured")}
+      data-active={active}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="picker-icon">
+          <Icon className="h-5 w-5" />
         </div>
-        <p className="picker-title">{opt.title}</p>
-        <p className="picker-desc">{opt.description}</p>
-        <p className="picker-steps">{opt.steps}</p>
+        <span className={cn("picker-badge", opt.badgeVariant === "new" && "picker-badge-new")}>
+          {opt.badge}
+        </span>
       </div>
-    </button>
+      <p className="picker-title">{opt.title}</p>
+      <p className="picker-desc">{opt.description}</p>
+      <p className="picker-steps">{opt.steps}</p>
+
+      <button
+        type="button"
+        className="picker-next mt-4 flex w-full items-center justify-center gap-2"
+        disabled={disabled || loading}
+        onClick={() => onContinue(opt.type)}
+      >
+        {loading && active ? "Opening…" : opt.nextLabel}
+        <ArrowRight className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 
 export function ExperienceTypeSelector({
   selected,
-  onSelect,
+  onContinue,
+  continuing,
+  canContinue,
 }: {
   selected?: ExperienceType;
-  onSelect: (type: ExperienceType) => void;
+  onContinue: (type: ExperienceType) => void;
+  continuing?: boolean;
+  canContinue?: boolean;
 }) {
+  const disabled = !canContinue;
+
   return (
     <div className="experience-picker space-y-6">
       <div>
         <p className="picker-section-label">Virtual tour engines</p>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {walkthroughOptions.map((opt) => (
-            <PickerCard key={opt.type} opt={opt} active={selected === opt.type} onSelect={onSelect} />
+            <PickerCard
+              key={opt.type}
+              opt={opt}
+              active={selected === opt.type}
+              disabled={disabled}
+              loading={continuing && selected === opt.type}
+              onContinue={onContinue}
+            />
           ))}
         </div>
       </div>
@@ -117,8 +148,9 @@ export function ExperienceTypeSelector({
         <PickerCard
           opt={sceneIntelligenceOption}
           active={selected === sceneIntelligenceOption.type}
-          onSelect={onSelect}
-          featured
+          disabled={disabled}
+          loading={continuing && selected === sceneIntelligenceOption.type}
+          onContinue={onContinue}
         />
       </div>
     </div>

@@ -104,6 +104,7 @@ export function FlatAnnotationEditor({
           : `relative aspect-video overflow-hidden rounded-xl bg-black ${placing ? "ring-2 ring-primary" : ""}`
       }
       data-placing={placing}
+      data-cursor={placing ? "crosshair" : undefined}
       onClick={handleCanvasClick}
     >
       {isStudio && <span className="studio-canvas-badge">Pin mode · {scene.title}</span>}

@@ -1,0 +1,50 @@
+/* Global Figma-style cursor — large visible pointer overlay */
+
+body.figma-cursor-active,
+body.figma-cursor-active * {
+  cursor: none !important;
+}
+
+.figma-cursor-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 99999;
+  will-change: transform;
+}
+
+.figma-cursor-svg {
+  width: 28px;
+  height: 28px;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
+  transition: width 0.1s, height 0.1s;
+}
+
+.figma-cursor-layer[data-mode="pointer"] .figma-cursor-svg {
+  width: 26px;
+  height: 26px;
+}
+
+.figma-cursor-layer[data-mode="crosshair"] .figma-cursor-svg {
+  width: 32px;
+  height: 32px;
+}
+
+.figma-cursor-layer[data-mode="text"] .figma-cursor-svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Fallback CSS cursors when overlay disabled (touch devices) */
+@media (pointer: coarse) {
+  body.figma-cursor-active,
+  body.figma-cursor-active * {
+    cursor: auto !important;
+  }
+  .figma-cursor-layer {
+    display: none;
+  }
+}

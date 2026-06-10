@@ -4,6 +4,8 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
 import "./globals.css";
+import "@/styles/figma-cursor.css";
+import { FigmaCursor } from "@/components/shell/figma-cursor";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -28,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans bg-white text-foreground`}>
         <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light" enableSystem={false} disableTransitionOnChange>
           <TooltipProvider>
+            <FigmaCursor />
             {children}
             <Toaster richColors position="bottom-center" className="md:!top-4 md:!right-4 md:!bottom-auto md:!left-auto" />
           </TooltipProvider>

@@ -604,3 +604,29 @@
   background: #e8f4fd;
   color: #0369a1;
 }
+
+.experience-picker .picker-next {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.625rem 1rem;
+  border-radius: 6px;
+  border: none;
+  background: #0d99ff;
+  color: #fff;
+  transition: filter 0.12s, opacity 0.12s;
+}
+
+.experience-picker .picker-next:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.experience-picker .picker-next:disabled {
+  opacity: 0.45;
+  background: #e4e4e7;
+  color: #71717a;
+  cursor: not-allowed;
+}
+
+.experience-picker .picker-card[data-active="true"] .picker-next:not(:disabled) {
+  box-shadow: 0 2px 8px rgb(13 153 255 / 0.35);
+}
