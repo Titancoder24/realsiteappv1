@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { CategoryRankChart } from "@/components/category-rank-chart";
-import { RefundReturnRateChart } from "@/components/refund-return-rate-chart";
 import { RevenueChart } from "@/components/revenue-chart";
 import { DashboardStats } from "@/components/stats";
 import { aggregateCampaignMix } from "@/lib/analytics/aggregate";
@@ -77,14 +76,13 @@ export function CampaignPerformanceDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Campaign Performance</h1>
-        <p className="text-muted-foreground">Efferd dashboard-4 · UTM analytics from Supabase</p>
+        <h1 className="text-2xl font-semibold">Campaign Hub</h1>
+        <p className="text-muted-foreground">UTM campaign performance, session trends, and lead conversion — live from Supabase.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <DashboardStats stats={stats} />
         <RevenueChart series={sessionSeries.length ? sessionSeries : undefined} title="Buyer sessions" valueLabel="Sessions" />
-        <RefundReturnRateChart />
         <CategoryRankChart
           data={aggregateCampaignMix(campaigns)}
           title="Sessions by campaign"

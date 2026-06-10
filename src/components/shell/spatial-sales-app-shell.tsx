@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   SidebarInset,
   SidebarProvider,
@@ -15,11 +14,14 @@ import { useUserRole, canAccessRoute } from "@/components/auth/role-guard";
 import { DashboardSidebar } from "@/components/shell/dashboard-sidebar";
 import { MobileBottomNav } from "@/components/shell/mobile-bottom-nav";
 import { getVisibleNavGroups } from "@/components/shell/dashboard-nav";
+import { useSidebarTheme } from "@/hooks/use-sidebar-theme";
+import { themeStyleVars } from "@/lib/theme/sidebar-themes";
 
 export function SpatialSalesAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { role } = useUserRole();
   const visibleGroups = getVisibleNavGroups(role);
+  const { themeId, ready } = useSidebarTheme();
 
   const isFullscreenRoute =
     pathname.includes("/dashboard/capture/") ||
@@ -27,11 +29,12 @@ export function SpatialSalesAppShell({ children }: { children: React.ReactNode }
 
   return (
     <SidebarProvider defaultOpen={false}>
-      <DashboardSidebar groups={visibleGroups} role={role} />
-      <SidebarInset className="flex min-h-svh flex-col overflow-x-hidden bg-white">
+      <div className="flex min-h-svh w-full" style={ready ? themeStyleVars(themeId) : undefined}>
+        <DashboardSidebar groups={visibleGroups} role={role} />
+        <SidebarInset className="flex min-h-svh flex-col overflow-x-hidden bg-muted/30">
         {!isFullscreenRoute && (
           <header
-            className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b border-gray-200 bg-white/95 px-3 backdrop-blur-md sm:gap-3 sm:px-4"
+            className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-2 border-b border-border/60 bg-background/90 px-3 backdrop-blur-md sm:gap-3 sm:px-4"
             style={{ paddingTop: "max(0px, env(safe-area-inset-top))" }}
           >
             <SidebarTrigger className="size-10 shrink-0 md:size-7" />
@@ -39,32 +42,29 @@ export function SpatialSalesAppShell({ children }: { children: React.ReactNode }
               <div className="relative hidden min-w-0 flex-1 sm:block md:max-w-md">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search projects, properties, leads…"
-                  className="h-9 pl-9"
+                  placeholder="Search developments, listings, leads…"
+                  className="h-9 border-border/60 bg-background pl-9"
                 />
               </div>
-              <p className="truncate text-sm font-semibold sm:hidden">Spatial Sales</p>
+              <p className="truncate text-sm font-semibold sm:hidden">RealSite</p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-              <Badge variant="success" className="hidden sm:inline-flex text-xs">
-                Online
-              </Badge>
               {canAccessRoute(role, "/dashboard/projects") && (
                 <Button size="sm" className="hidden h-9 sm:inline-flex" asChild>
                   <Link href="/dashboard/projects/new">
                     <Plus className="mr-1 h-4 w-4" />
-                    Project
+                    Development
                   </Link>
                 </Button>
               )}
               <Button size="icon" variant="ghost" className="size-10 sm:hidden" asChild>
-                <Link href="/dashboard/projects/new" aria-label="Create project">
+                <Link href="/dashboard/projects/new" aria-label="New development">
                   <Plus className="h-5 w-5" />
                 </Link>
               </Button>
-              <Button size="icon" variant="ghost" className="hidden size-9 sm:inline-flex" asChild>
-                <Link href="/dashboard/settings" aria-label="Settings">
-                  <span className="text-xs font-medium">⚙</span>
+              <Button size="icon" variant="ghost" className="size-9" asChild>
+                <Link href="/dashboard/settings" aria-label="Workspace settings">
+                  <Settings2 className="h-4 w-4" />
                 </Link>
               </Button>
             </div>
@@ -82,7 +82,8 @@ export function SpatialSalesAppShell({ children }: { children: React.ReactNode }
         </main>
 
         {!isFullscreenRoute && <MobileBottomNav role={role} />}
-      </SidebarInset>
+        </SidebarInset>
+      </div>
     </SidebarProvider>
   );
 }

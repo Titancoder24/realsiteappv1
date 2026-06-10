@@ -1,13 +1,17 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { Building } from "lucide-react";
+import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { CategoryRankChart } from "@/components/category-rank-chart";
+import { TrafficSourcesChart } from "@/components/traffic-sources-chart";
 
 type Project = { id: string; name: string; city?: string };
 
@@ -17,6 +21,7 @@ function PropertiesContent() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState(projectIdFromUrl ?? "");
   const [properties, setProperties] = useState<{ id: string; name: string; unit_type?: string; publish_status?: string; experiences?: { type: string; status: string }[] }[]>([]);
+  const [analytics, setAnalytics] = useState<{ trafficSources?: { source: string; sessions: number }[] } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", unit_type: "", configuration: "", project_id: projectIdFromUrl ?? "" });
 
@@ -40,7 +45,18 @@ function PropertiesContent() {
   useEffect(() => {
     const url = selectedProjectId ? `/api/properties?projectId=${selectedProjectId}` : "/api/properties";
     fetch(url).then((r) => r.json()).then((data) => Array.isArray(data) && setProperties(data)).catch(() => {});
+    fetch("/api/analytics").then((r) => (r.ok ? r.json() : null)).then((d) => d && setAnalytics(d)).catch(() => {});
   }, [selectedProjectId]);
+
+  const published = properties.filter((p) => p.publish_status === "published").length;
+  const statusMix = useMemo(() => {
+    const draft = properties.length - published;
+    const total = Math.max(1, properties.length);
+    return [
+      { category: "Published", share: Math.round((published / total) * 100) },
+      { category: "Draft", share: Math.round((draft / total) * 100) },
+    ].filter((d) => d.share > 0);
+  }, [properties, published]);
 
   async function createProperty(e: React.FormEvent) {
     e.preventDefault();
@@ -56,12 +72,26 @@ function PropertiesContent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold sm:text-2xl">Properties</h1>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button variant="outline" className="w-full sm:w-auto" onClick={() => setShowForm(!showForm)} disabled={!projects.length}>Add Property</Button>
-          <Button className="w-full sm:w-auto" asChild><Link href="/dashboard/experiences/new">Create Experience</Link></Button>
-        </div>
+      <DashboardPageHeader
+        title="Listings"
+        description="Property units across your developments — publish status and virtual tour coverage."
+        actions={
+          <>
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => setShowForm(!showForm)} disabled={!projects.length}>Add Listing</Button>
+            <Button className="w-full sm:w-auto" asChild><Link href="/dashboard/experiences/new">Launch 360° Capture</Link></Button>
+          </>
+        }
+      />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Listings</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{properties.length}</p></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Published</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-emerald-600">{published}</p></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">With Tours</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{properties.filter((p) => (p.experiences?.length ?? 0) > 0).length}</p></CardContent></Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {statusMix.length > 0 && <CategoryRankChart data={statusMix} title="Publish Status" description="Published vs draft listings." />}
+        <TrafficSourcesChart data={analytics?.trafficSources} title="Buyer Traffic" description="Acquisition channels for tour sessions." />
       </div>
 
       {!projects.length ? (

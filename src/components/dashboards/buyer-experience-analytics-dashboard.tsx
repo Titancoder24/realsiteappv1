@@ -4,13 +4,10 @@ import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AudienceMix } from "@/components/audience-mix";
-import { BrowserShare } from "@/components/browser-share";
 import { OnlineNow } from "@/components/online-now";
 import { TopPages } from "@/components/top-pages";
-import { TopReferrers } from "@/components/top-referrers";
 import { TrafficSourcesChart } from "@/components/traffic-sources-chart";
 import { VisitorsChart } from "@/components/visitors-chart";
-import { WebVitals } from "@/components/web-vitals";
 import { HeatMapExplorer } from "@/components/analytics/heat-map-explorer";
 
 type AnalyticsPayload = {
@@ -46,8 +43,8 @@ export function BuyerExperienceAnalyticsDashboard() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Buyer Experience Analytics</h1>
-          <p className="text-muted-foreground">Efferd dashboard-5 · live Supabase data</p>
+          <h1 className="text-2xl font-semibold">Buyer Analytics</h1>
+          <p className="text-muted-foreground">Tour engagement, traffic sources, and gaze heat maps — live from Supabase.</p>
         </div>
         {dbStatus && (
           <div className={`rounded-md border px-3 py-2 text-xs ${dbStatus.connected ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
@@ -66,9 +63,6 @@ export function BuyerExperienceAnalyticsDashboard() {
         <TopPages rows={data?.topScenes} />
         <TrafficSourcesChart data={data?.trafficSources} title="UTM sources" description="Sessions by campaign source" />
         <AudienceMix segments={data?.audienceMix} />
-        <BrowserShare />
-        <TopReferrers />
-        <WebVitals />
       </div>
 
       <Tabs defaultValue="heatmap">

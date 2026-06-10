@@ -9,9 +9,9 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Spatial Sales Platform",
+  title: "RealSite — Virtual Property Tours",
   description: "AI spatial sales infrastructure for real estate developers",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Spatial Sales" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "RealSite" },
 };
 
 export const viewport = {

@@ -5,97 +5,218 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowUpRight, Building2, Eye, Flame, Phone, Users } from "lucide-react";
+import {
+  Building2,
+  Camera,
+  CircleDot,
+  Flame,
+  Globe2,
+  Phone,
+  Sparkles,
+  TrendingUp,
+  Users,
+  View,
+} from "lucide-react";
+import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { VisitorsChart } from "@/components/visitors-chart";
+import { TrafficSourcesChart } from "@/components/traffic-sources-chart";
+import { CategoryRankChart } from "@/components/category-rank-chart";
+import { OnlineNow } from "@/components/online-now";
+
+type StatsPayload = {
+  totalProjects: number;
+  totalProperties: number;
+  publishedExperiences: number;
+  experiences360: number;
+  experiences3d: number;
+  processingJobs: number;
+  failedGenerations: number;
+  buyerSessions: number;
+  hotLeads: number;
+  callbackRequests: number;
+  avgIntentScore: number;
+  recentEvents: { event_type: string; payload?: { query?: string }; created_at: string }[];
+};
+
+type AnalyticsPayload = {
+  sessionsByMonth?: { month: string; visitors: number }[];
+  trafficSources?: { source: string; sessions: number }[];
+  deviceMix?: { label: string; share: number }[];
+  liveNow?: number;
+  totalLeads?: number;
+};
 
 export function ExecutiveOverviewDashboard() {
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<StatsPayload>({
     totalProjects: 0, totalProperties: 0, publishedExperiences: 0, experiences360: 0,
     experiences3d: 0, processingJobs: 0, failedGenerations: 0, buyerSessions: 0,
-    hotLeads: 0, callbackRequests: 0, avgIntentScore: 0, recentEvents: [] as { event_type: string; payload?: { query?: string }; created_at: string }[],
+    hotLeads: 0, callbackRequests: 0, avgIntentScore: 0, recentEvents: [],
   });
+  const [analytics, setAnalytics] = useState<AnalyticsPayload | null>(null);
 
   useEffect(() => {
     fetch("/api/dashboard/stats").then((r) => r.json()).then(setStats).catch(() => {});
+    fetch("/api/analytics")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setAnalytics(d))
+      .catch(() => {});
   }, []);
 
   const kpis = [
-    { label: "Projects", value: stats.totalProjects, icon: Building2 },
-    { label: "Properties", value: stats.totalProperties, icon: Building2 },
-    { label: "Published", value: stats.publishedExperiences, icon: Eye },
-    { label: "360° Tours", value: stats.experiences360, icon: Eye },
-    { label: "3D Walkthroughs", value: stats.experiences3d, icon: Eye },
-    { label: "Processing", value: stats.processingJobs, icon: ArrowUpRight },
-    { label: "Buyer Sessions", value: stats.buyerSessions, icon: Users },
-    { label: "Hot Leads", value: stats.hotLeads, icon: Flame },
-    { label: "Callbacks", value: stats.callbackRequests, icon: Phone },
-    { label: "Avg Intent", value: `${stats.avgIntentScore}%`, icon: Flame },
+    { label: "Developments", value: stats.totalProjects, icon: Building2, hint: "Active projects" },
+    { label: "Listings", value: stats.totalProperties, icon: Building2, hint: "Properties in portfolio" },
+    { label: "Live Tours", value: stats.publishedExperiences, icon: Globe2, hint: "Published experiences" },
+    { label: "360° Captures", value: stats.experiences360, icon: Camera, hint: "Panorama tours" },
+    { label: "3D Walkthroughs", value: stats.experiences3d, icon: View, hint: "Gaussian splat tours" },
+    { label: "Buyer Visits", value: stats.buyerSessions, icon: Users, hint: "Total sessions" },
+    { label: "Hot Leads", value: stats.hotLeads, icon: Flame, hint: "Intent score ≥ 80" },
+    { label: "Callbacks", value: stats.callbackRequests, icon: Phone, hint: "Requested contact" },
+    { label: "Avg Intent", value: `${stats.avgIntentScore}%`, icon: TrendingUp, hint: "Lead intent average" },
+    { label: "In Pipeline", value: stats.processingJobs, icon: Sparkles, hint: "Jobs processing" },
   ];
+
+  const tourTotal = Math.max(1, stats.experiences360 + stats.experiences3d);
+  const experienceMix = [
+    { category: "360° Panorama", share: Math.round((stats.experiences360 / tourTotal) * 100) },
+    { category: "3D Walkthrough", share: Math.round((stats.experiences3d / tourTotal) * 100) },
+  ].filter((d) => d.share > 0);
+
+  const monthDelta =
+    analytics?.sessionsByMonth && analytics.sessionsByMonth.length >= 2
+      ? analytics.sessionsByMonth.at(-1)!.visitors - analytics.sessionsByMonth.at(-2)!.visitors
+      : undefined;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Executive Overview</h1>
-          <p className="text-sm text-muted-foreground sm:text-base">Spatial sales performance across your portfolio</p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button variant="outline" className="w-full sm:w-auto" asChild><Link href="/dashboard/experiences/new">Create Experience</Link></Button>
-          <Button className="w-full sm:w-auto" asChild><Link href="/dashboard/projects/new">Add Project</Link></Button>
-        </div>
-      </div>
+      <DashboardPageHeader
+        title="Portfolio Pulse"
+        description="Real-time performance across developments, virtual tours, and buyer intent."
+        actions={
+          <>
+            <Button variant="outline" className="w-full sm:w-auto" asChild>
+              <Link href="/dashboard/experiences/new">Launch 360° Capture</Link>
+            </Button>
+            <Button className="w-full sm:w-auto" asChild>
+              <Link href="/dashboard/projects/new">New Development</Link>
+            </Button>
+          </>
+        }
+      />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {kpis.map((kpi) => {
           const Icon = kpi.icon;
           return (
-            <Card key={kpi.label}>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardDescription>{kpi.label}</CardDescription>
-                <Icon className="h-4 w-4 text-muted-foreground" />
+            <Card key={kpi.label} className="border-border/60 shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardDescription className="text-xs font-medium">{kpi.label}</CardDescription>
+                <Icon className="h-4 w-4 text-primary/70" />
               </CardHeader>
-              <CardContent><div className="text-2xl font-bold">{kpi.value}</div></CardContent>
+              <CardContent>
+                <div className="text-2xl font-bold tracking-tight">{kpi.value}</div>
+                <p className="mt-1 text-[11px] text-muted-foreground">{kpi.hint}</p>
+              </CardContent>
             </Card>
           );
         })}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Recent High-Intent Events</CardTitle>
-            <CardDescription>Live from buyer sessions</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!stats.recentEvents.length ? (
-              <div className="flex flex-col items-center py-12 text-center">
-                <Users className="mb-4 h-10 w-10 text-muted-foreground" />
-                <p className="font-medium">No buyer sessions yet</p>
-                <Button className="mt-4" asChild><Link href="/dashboard/experiences">Publish Experience</Link></Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {stats.recentEvents.map((e, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <p className="text-sm font-medium">{e.event_type.replace(/_/g, " ")}</p>
-                      {e.payload?.query && <p className="text-xs text-muted-foreground">{e.payload.query}</p>}
-                    </div>
-                    <Badge variant="secondary">{new Date(e.created_at).toLocaleTimeString()}</Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <VisitorsChart
+          data={analytics?.sessionsByMonth}
+          delta={monthDelta}
+          description="Buyer tour sessions — last 12 months from Supabase."
+        />
+        <TrafficSourcesChart
+          data={analytics?.trafficSources?.map((s) => ({ source: s.source, sessions: s.sessions }))}
+          title="Acquisition Channels"
+          description="Where buyers discover your virtual tours."
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-1">
+          {experienceMix.length > 0 ? (
+            <CategoryRankChart
+              data={experienceMix}
+              title="Experience Mix"
+              description="Published tour types across your portfolio."
+            />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Experience Mix</CardTitle>
+                <CardDescription>Publish your first tour to see the breakdown.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button asChild size="sm"><Link href="/dashboard/experiences/new">Start Capture</Link></Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        <OnlineNow
+          liveCount={analytics?.liveNow}
+          devices={analytics?.deviceMix}
+          delta={monthDelta}
+        />
+
         <Card>
-          <CardHeader><CardTitle>Engine Health</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex justify-between"><span className="text-sm">360° Engine</span><Badge variant="success">Online</Badge></div>
-            <div className="flex justify-between"><span className="text-sm">3D Walkthrough</span><Badge variant="success">Online</Badge></div>
-            <div className="flex justify-between"><span className="text-sm">Failed Jobs</span><Badge variant={stats.failedGenerations > 0 ? "destructive" : "secondary"}>{stats.failedGenerations}</Badge></div>
+          <CardHeader>
+            <CardTitle className="text-base">Platform Status</CardTitle>
+            <CardDescription>Capture & generation engines</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+              <span className="flex items-center gap-2 text-sm"><CircleDot className="h-3.5 w-3.5 text-emerald-500" />360° Stitch Engine</span>
+              <Badge variant="success">Operational</Badge>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+              <span className="flex items-center gap-2 text-sm"><CircleDot className="h-3.5 w-3.5 text-emerald-500" />3D Generation</span>
+              <Badge variant={stats.failedGenerations > 0 ? "destructive" : "success"}>
+                {stats.failedGenerations > 0 ? `${stats.failedGenerations} failed` : "Operational"}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+              <span className="text-sm text-muted-foreground">Leads in pipeline</span>
+              <span className="font-semibold">{analytics?.totalLeads ?? stats.hotLeads}</span>
+            </div>
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Buyer Activity</CardTitle>
+          <CardDescription>High-intent events from live tour sessions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!stats.recentEvents.length ? (
+            <div className="flex flex-col items-center rounded-xl border border-dashed py-12 text-center">
+              <Users className="mb-3 h-10 w-10 text-muted-foreground/50" />
+              <p className="font-medium">No buyer activity yet</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Publish a virtual tour and share the link — sessions and intent signals will appear here.
+              </p>
+              <Button className="mt-4" asChild><Link href="/dashboard/experiences">Go to Virtual Tours</Link></Button>
+            </div>
+          ) : (
+            <div className="divide-y rounded-lg border">
+              {stats.recentEvents.map((e, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium capitalize">{e.event_type.replace(/_/g, " ")}</p>
+                    {e.payload?.query && <p className="truncate text-xs text-muted-foreground">{e.payload.query}</p>}
+                  </div>
+                  <Badge variant="secondary" className="shrink-0 text-[10px]">
+                    {new Date(e.created_at).toLocaleString()}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -46,7 +46,7 @@ export function TopPages({
 			<CardContent className="mask-b-from-50% mask-b-to-100% p-0 pb-2">
 				<Table className="border-t">
 					<TableCaption className="sr-only">
-						Top landing pages by visits with year-over-year change.
+						Most visited tour scenes from live buyer sessions.
 					</TableCaption>
 					<TableHeader>
 						<TableRow>

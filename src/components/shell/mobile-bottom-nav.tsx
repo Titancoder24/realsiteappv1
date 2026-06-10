@@ -35,7 +35,7 @@ export function MobileBottomNav({ role }: { role: UserRole }) {
               )}
             >
               <Icon className={cn("h-5 w-5 shrink-0", active && "stroke-[2.5]")} />
-              <span className="truncate">{item.label.split(" ")[0]}</span>
+              <span className="truncate">{item.shortLabel ?? item.label.split(" ")[0]}</span>
             </Link>
           );
         })}

@@ -38,13 +38,10 @@ const periodDays = 7;
 
 /** Demo mix (sums to 100). Replace or pass `data` on the component. */
 const data = [
-	{ category: "Apparel", share: 22 },
-	{ category: "Accessories", share: 22 },
-	{ category: "Footwear", share: 18 },
-	{ category: "Home & living", share: 14 },
-	{ category: "Beauty", share: 11 },
-	{ category: "Outlet", share: 8 },
-	{ category: "Sports", share: 5 },
+	{ category: "360° Tours", share: 40 },
+	{ category: "3D Walkthroughs", share: 25 },
+	{ category: "Published", share: 20 },
+	{ category: "Draft", share: 15 },
 ] as const satisfies readonly CategoryMixDatum[];
 
 /** Sort by share descending, keep top four, merge the rest into “Others” (max five slices). */
@@ -100,7 +97,7 @@ function buildSlices(data: readonly CategoryMixDatum[]): {
 
 export function CategoryRankChart({
 	data: dataProp,
-	title = "Revenue Share by Category",
+	title = "Portfolio Mix",
 	description = `Last ${periodDays} days.`,
 }: {
 	data?: CategoryMixDatum[];

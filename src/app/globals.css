@@ -59,6 +59,11 @@
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #e5e7eb;
   --sidebar-ring: #2563eb;
+  --chart-1: #4f46e5;
+  --chart-2: #059669;
+  --chart-3: #d97706;
+  --chart-4: #e11d48;
+  --chart-5: #64748b;
 }
 
 .dark {
