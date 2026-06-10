@@ -12,7 +12,7 @@ body.figma-cursor-active * {
   width: 0;
   height: 0;
   pointer-events: none;
-  z-index: 99999;
+  z-index: 2147483647;
   will-change: transform;
   /* No transition on transform/opacity — position must track the pointer 1:1 */
   contain: layout style;
@@ -27,8 +27,8 @@ body.figma-cursor-active * {
 
 /* Default arrow — larger, tip anchored at the pointer */
 .figma-cursor-layer[data-mode="default"] .figma-cursor-svg[data-cursor-mode="default"] {
-  width: 34px;
-  height: 34px;
+  width: 42px;
+  height: 42px;
   transform-origin: 5px 3px;
 }
 
