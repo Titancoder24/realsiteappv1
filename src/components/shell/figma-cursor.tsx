@@ -79,13 +79,13 @@ export function FigmaCursor() {
 
   return createPortal(
     <div ref={layerRef} className="figma-cursor-layer" data-mode="default" style={{ opacity: 0 }}>
-      {/* Default — Figma arrow */}
-      <svg className="figma-cursor-svg" data-cursor-mode="default" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Default — bold Figma arrow, leaning left */}
+      <svg className="figma-cursor-svg" data-cursor-mode="default" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path
-          d="M4 3L4 18.5L8.5 14.5L11.5 22.5L13.5 21.5L10.5 13.5L17.5 13.5Z"
-          fill="#18181b"
+          d="M5 3L5 26L11.5 20L15.5 30.5L19.5 28.5L15.5 18.5L24.5 18.5Z"
+          fill="#0a0a0a"
           stroke="#ffffff"
-          strokeWidth="1.75"
+          strokeWidth="3"
           strokeLinejoin="round"
         />
       </svg>

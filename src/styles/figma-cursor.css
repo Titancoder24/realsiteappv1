@@ -20,9 +20,17 @@ body.figma-cursor-active * {
 
 .figma-cursor-svg {
   display: none;
-  width: 28px;
-  height: 28px;
-  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
+  width: 30px;
+  height: 30px;
+  filter: drop-shadow(0 1.5px 3px rgb(0 0 0 / 0.35));
+}
+
+/* Default arrow — larger, leaning left, tip anchored at the pointer */
+.figma-cursor-layer[data-mode="default"] .figma-cursor-svg[data-cursor-mode="default"] {
+  width: 38px;
+  height: 38px;
+  transform: rotate(-14deg);
+  transform-origin: 5px 3px;
 }
 
 /* Show exactly one variant based on layer mode — no React re-render needed */
@@ -51,6 +59,11 @@ body.figma-cursor-active * {
 .figma-cursor-layer.figma-cursor-down .figma-cursor-svg {
   transform: scale(0.88);
   transform-origin: 6px 5px;
+}
+
+.figma-cursor-layer[data-mode="default"].figma-cursor-down .figma-cursor-svg[data-cursor-mode="default"] {
+  transform: rotate(-14deg) scale(0.9);
+  transform-origin: 5px 3px;
 }
 
 /* Fallback when overlay disabled (touch devices) */
