@@ -1,11 +1,5 @@
 {
   "installCommand": "npm install",
   "buildCommand": "npm run build",
-  "framework": "nextjs",
-  "crons": [
-    {
-      "path": "/api/cron/worldlabs",
-      "schedule": "*/2 * * * *"
-    }
-  ]
+  "framework": "nextjs"
 }
