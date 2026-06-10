@@ -13,7 +13,7 @@ export async function POST() {
       .limit(10);
 
     for (const job of jobs ?? []) {
-      spatialGenerationService.processWorldLabsJob(job.id).catch(console.error);
+      spatialGenerationService.processSpatialJob(job.id).catch(console.error);
     }
 
     return NextResponse.json({ processed: jobs?.length ?? 0 });

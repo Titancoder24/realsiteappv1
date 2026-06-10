@@ -32,7 +32,7 @@ export async function POST(req: Request) {
         organizationId: property.organization_id,
         mediaAssetIds: body.mediaAssetIds ?? [],
         prompt: body.prompt,
-        model: body.model ?? "default",
+        model: body.model,
       });
 
       if (result.jobId) {

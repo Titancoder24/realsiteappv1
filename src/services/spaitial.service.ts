@@ -52,7 +52,34 @@ export class SpAItialService {
     return data.file_id;
   }
 
-  /** Create world from a public HTTPS image URL (simplest path). */
+  /** Resolve model for API body — never send alias "default" (returns MODEL_FORBIDDEN). */
+  private modelField(model?: string): Record<string, string> {
+    if (!model || model === "default") return {};
+    return { model };
+  }
+
+  /** Download image and upload to SpAItial — most reliable path for Supabase-hosted photos. */
+  async createWorldFromMediaUrl(params: {
+    imageUrl: string;
+    title?: string;
+    model?: string;
+    isPano?: boolean;
+  }): Promise<{ requestId: string; status: string }> {
+    const res = await fetch(params.imageUrl);
+    if (!res.ok) throw new Error(`Could not fetch property image (${res.status})`);
+    const mime = res.headers.get("content-type") ?? "image/jpeg";
+    const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+    const buffer = await res.arrayBuffer();
+    const fileId = await this.uploadFile(buffer, `property.${ext}`, mime);
+    return this.createWorldFromFileId({
+      fileId,
+      title: params.title,
+      model: params.model,
+      isPano: params.isPano,
+    });
+  }
+
+  /** Create world from a public HTTPS image URL. */
   async createWorldFromImageUrl(params: {
     imageUrl: string;
     title?: string;
@@ -66,7 +93,7 @@ export class SpAItialService {
         image_url: params.imageUrl,
         ...(params.isPano ? { is_pano: true } : {}),
       },
-      model: params.model ?? "default",
+      ...this.modelField(params.model),
       title: params.title ?? "Property immersive world",
       output_format: "spz",
       validation: { skip: true },
@@ -92,9 +119,10 @@ export class SpAItialService {
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         input: { type: "text", prompt: params.prompt },
-        model: params.model ?? "default",
+        ...this.modelField(params.model),
         title: params.title ?? params.prompt.slice(0, 80),
         output_format: "spz",
+        validation: { skip: true },
         visibility: { is_public: false, is_listed: false },
       }),
     });
@@ -114,7 +142,7 @@ export class SpAItialService {
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         input: { type: "file_id", file_id: params.fileId, ...(params.isPano ? { is_pano: true } : {}) },
-        model: params.model ?? "default",
+        ...this.modelField(params.model),
         title: params.title ?? "Property immersive world",
         output_format: "spz",
         validation: { skip: true },
@@ -127,7 +155,7 @@ export class SpAItialService {
   }
 
   async getStatus(requestId: string): Promise<SpAItialStatus> {
-    const res = await fetch(`${BASE}/v1/worlds/requests/${requestId}`, {
+    const res = await fetch(`${BASE}/v1/worlds/requests/${requestId}/status`, {
       headers: authHeaders(),
     });
     if (!res.ok) await parseError(res);
@@ -147,7 +175,7 @@ export class SpAItialService {
   }
 
   async getResult(requestId: string): Promise<SpAItialWorldResult> {
-    const res = await fetch(`${BASE}/v1/worlds/requests/${requestId}/result`, {
+    const res = await fetch(`${BASE}/v1/worlds/requests/${requestId}`, {
       headers: authHeaders(),
     });
     if (!res.ok) await parseError(res);
@@ -196,15 +224,8 @@ export class SpAItialService {
     throw new Error("No splat redirect URL");
   }
 
-  async pollUntilDone(requestId: string, maxAttempts = 90, intervalMs = 8000): Promise<SpAItialStatus> {
-    for (let i = 0; i < maxAttempts; i++) {
-      const status = await this.getStatus(requestId);
-      if (status.status === "COMPLETED" || status.status === "FAILED" || status.status === "CANCELLED") {
-        return status;
-      }
-      await new Promise((r) => setTimeout(r, intervalMs));
-    }
-    throw new Error("SpAItial generation timed out");
+  isTerminal(status: SpAItialStatus["status"]) {
+    return status === "COMPLETED" || status === "FAILED" || status === "CANCELLED";
   }
 }
 

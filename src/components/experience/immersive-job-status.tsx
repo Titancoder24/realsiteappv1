@@ -18,17 +18,19 @@ const PROGRESS_MAP: Partial<Record<JobStatus, number>> = {
 export function ImmersiveJobStatus({ jobId, onReady }: { jobId: string; onReady?: () => void }) {
   const [status, setStatus] = useState("worldlabs_processing");
   const [developerLabel, setDeveloperLabel] = useState("Building immersive world");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function poll() {
       const res = await fetch(`/api/immersive/jobs/${jobId}`);
       const data = await res.json();
-      if (data.status) applyUpdate(data.status, data.developerLabel);
+      if (data.status) applyUpdate(data.status, data.developerLabel, data.errorMessage);
     }
 
-    function applyUpdate(s: string, label?: string) {
+    function applyUpdate(s: string, label?: string, err?: string) {
       setStatus(s);
       setDeveloperLabel(label ?? "Processing");
+      if (err) setErrorMessage(err);
       if (s === "ready_for_review" || s === "published") onReady?.();
     }
 
@@ -53,8 +55,13 @@ export function ImmersiveJobStatus({ jobId, onReady }: { jobId: string; onReady?
       </CardHeader>
       <CardContent className="space-y-4">
         <Progress value={progress} />
+        {failed && errorMessage && (
+          <p className="text-sm text-destructive">{errorMessage}</p>
+        )}
         <p className="text-sm text-muted-foreground">
-          Echo generation typically takes 6–8 minutes. You can leave this page — we&apos;ll keep processing.
+          {failed
+            ? "Generation failed. Go back and try again with a different photo."
+            : "Echo generation typically takes 6–8 minutes. Keep this page open or return later."}
         </p>
       </CardContent>
     </Card>

@@ -70,7 +70,7 @@ class ImmersiveWorldEngine implements SpatialEngine {
         property_id: input.propertyId,
         experience_id: input.experienceId,
         status: "worldlabs_generation_requested",
-        model: input.model ?? "default",
+        model: input.model ?? null,
         provider: "spaitial",
         input_media_asset_ids: input.mediaAssetIds,
         world_prompt_payload: { prompt: input.prompt, title: input.prompt },
@@ -211,59 +211,75 @@ export class SpatialGenerationService {
       await supabase.from("worldlabs_jobs").update({ status, ...extra, updated_at: new Date().toISOString() }).eq("id", jobId);
     };
 
+    const fail = async (message: string) => {
+      await updateStatus("worldlabs_generation_failed", {
+        error_message: message,
+        failed_at: new Date().toISOString(),
+        retry_count: (job.retry_count ?? 0) + 1,
+      });
+      await supabase
+        .from("experiences")
+        .update({ status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", job.experience_id);
+    };
+
     try {
-      await updateStatus("worldlabs_processing", { started_at: new Date().toISOString(), provider: "spaitial" });
+      const requestId = job.operation_id as string | null;
 
-      const mediaIds = (job.input_media_asset_ids as string[]) ?? [];
-      const promptPayload = (job.world_prompt_payload as { prompt?: string; title?: string }) ?? {};
-      let imageUrl: string | undefined;
+      // Phase 1: submit to SpAItial (fast — safe on Vercel)
+      if (!requestId) {
+        await updateStatus("worldlabs_processing", { started_at: new Date().toISOString(), provider: "spaitial" });
 
-      if (mediaIds.length) {
-        const { data: assets } = await supabase.from("media_assets").select("file_url").in("id", mediaIds).limit(1);
-        imageUrl = assets?.[0]?.file_url;
+        const mediaIds = (job.input_media_asset_ids as string[]) ?? [];
+        const promptPayload = (job.world_prompt_payload as { prompt?: string; title?: string }) ?? {};
+        let imageUrl: string | undefined;
+
+        if (mediaIds.length) {
+          const { data: assets } = await supabase.from("media_assets").select("file_url").in("id", mediaIds).limit(1);
+          imageUrl = assets?.[0]?.file_url;
+        }
+
+        if (!imageUrl && !promptPayload.prompt) {
+          await fail("Upload a property image to generate an Immersive World.");
+          return;
+        }
+
+        const title = promptPayload.title ?? promptPayload.prompt ?? "Property immersive world";
+        const model = job.model && job.model !== "default" ? job.model : undefined;
+
+        const { requestId: newRequestId } = imageUrl
+          ? await spaitialService.createWorldFromMediaUrl({ imageUrl, title, model })
+          : await spaitialService.createWorldFromText({ prompt: promptPayload.prompt!, title, model });
+
+        await updateStatus("worldlabs_processing", { operation_id: newRequestId });
+        return;
       }
 
-      if (!imageUrl && !promptPayload.prompt) {
-        throw new Error("Upload a property image to generate an Immersive World.");
-      }
+      // Phase 2: poll once per invocation (cron / queue calls repeatedly)
+      const poll = await spaitialService.getStatus(requestId);
 
-      const title = promptPayload.title ?? promptPayload.prompt ?? "Property immersive world";
-      const { requestId } = imageUrl
-        ? await spaitialService.createWorldFromImageUrl({
-            imageUrl,
-            title,
-            model: job.model ?? "default",
-          })
-        : await spaitialService.createWorldFromText({
-            prompt: promptPayload.prompt!,
-            title,
-            model: job.model ?? "default",
-          });
+      if (!spaitialService.isTerminal(poll.status)) return;
 
-      await updateStatus("worldlabs_processing", { operation_id: requestId });
-
-      const finalStatus = await spaitialService.pollUntilDone(requestId);
-      if (finalStatus.status === "FAILED" || finalStatus.status === "CANCELLED") {
-        throw new Error(finalStatus.error ?? `Generation ${finalStatus.status}`);
+      if (poll.status === "FAILED" || poll.status === "CANCELLED") {
+        await fail(poll.error ?? `Generation ${poll.status}`);
+        return;
       }
 
       const result = await spaitialService.getResult(requestId);
       let spzPublicUrl = result.splatProxyUrl;
 
-      // Download splat to Supabase so buyer viewer works without API auth
       try {
         const signedUrl = await spaitialService.resolveSplatDownloadUrl(requestId);
         const fileRes = await fetch(signedUrl);
         if (fileRes.ok) {
           const buffer = await fileRes.arrayBuffer();
           const path = `${job.organization_id}/${job.property_id}/immersive/${job.experience_id}-${Date.now()}.spz`;
-          const admin = createAdminClient();
-          await admin.storage.from("media").upload(path, buffer, { contentType: "application/octet-stream", upsert: true });
-          const { data: { publicUrl } } = admin.storage.from("media").getPublicUrl(path);
+          await supabase.storage.from("media").upload(path, buffer, { contentType: "application/octet-stream", upsert: true });
+          const { data: { publicUrl } } = supabase.storage.from("media").getPublicUrl(path);
           spzPublicUrl = publicUrl;
         }
       } catch {
-        // Fall back to proxy URL stored in viewer_url
+        // Fall back to SpAItial proxy URL
       }
 
       await updateStatus("worldlabs_succeeded", {
@@ -293,15 +309,7 @@ export class SpatialGenerationService {
         .update({ status: "ready_for_review", updated_at: new Date().toISOString() })
         .eq("id", job.experience_id);
     } catch (err) {
-      await updateStatus("worldlabs_generation_failed", {
-        error_message: err instanceof Error ? err.message : "Unknown error",
-        failed_at: new Date().toISOString(),
-        retry_count: (job.retry_count ?? 0) + 1,
-      });
-      await supabase
-        .from("experiences")
-        .update({ status: "failed", updated_at: new Date().toISOString() })
-        .eq("id", job.experience_id);
+      await fail(err instanceof Error ? err.message : "Unknown error");
     }
   }
 

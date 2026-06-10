@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { withAuth, jsonError } from "@/lib/api-utils";
+import { spatialGenerationService } from "@/services/spatial-generation.service";
 
 const LABELS: Record<string, string> = {
   worldlabs_generation_requested: "Queued for generation",
@@ -18,6 +19,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ jobId: 
     if (error || !job) return jsonError("Job not found", 404);
     if (job.organization_id !== profile.organization_id && profile.role !== "platform_admin") {
       return jsonError("Forbidden", 403);
+    }
+
+    // Advance job one step per poll (submit / check status / finalize)
+    if (job.status === "worldlabs_generation_requested" || job.status === "worldlabs_processing") {
+      await spatialGenerationService.processImmersiveWorldJob(jobId).catch(console.error);
+      const { data: refreshed } = await admin.from("worldlabs_jobs").select("*").eq("id", jobId).single();
+      if (refreshed) Object.assign(job, refreshed);
     }
 
     return NextResponse.json({
