@@ -195,6 +195,7 @@ export function GuidedCameraCapture({
       });
 
       setHint("Building 360° view… 0%");
+      const stitchStart = performance.now();
       const result = await stitchInBackground(
         extracted.map((f) => ({
           yaw: f.yaw,
@@ -203,7 +204,11 @@ export function GuidedCameraCapture({
           pitch: f.devicePitch,
           roll: f.deviceRoll,
         })),
-        (pct) => setHint(`Building 360° view… ${pct}%`),
+        (pct) => {
+          const elapsed = ((performance.now() - stitchStart) / 1000).toFixed(1);
+          setHint(`Building 360° view… ${pct}% (${elapsed}s)`);
+        },
+        { fast: true },
       );
       const url = URL.createObjectURL(result.blob);
       setPreviewBlob(result.blob);
@@ -301,6 +306,7 @@ export function GuidedCameraCapture({
       const result = await stitchInBackground(
         captured.map((f) => ({ yaw: f.yaw, blob: f.blob, exposure: f.exposure })),
         (pct) => setHint(`Building 360° view… ${pct}%`),
+        { fast: true },
       );
       const url = URL.createObjectURL(result.blob);
       setPreviewBlob(result.blob);
@@ -339,34 +345,50 @@ export function GuidedCameraCapture({
   async function acceptPreview() {
     if (!previewBlob || !panoramaConfig) return;
     setSaving(true);
+    setHint("Uploading to cloud…");
 
-    const form = new FormData();
-    form.append("file", new File([previewBlob], "panorama.jpg", { type: "image/jpeg" }));
-    form.append("propertyId", propertyId);
-    const uploadRes = await fetch("/api/media/upload", { method: "POST", body: form });
-    const asset = await uploadRes.json();
+    try {
+      const form = new FormData();
+      form.append("file", new File([previewBlob], "panorama.jpg", { type: "image/jpeg" }));
+      form.append("propertyId", propertyId);
+      const uploadRes = await fetch("/api/media/upload", { method: "POST", body: form });
+      const asset = await uploadRes.json();
 
-    const stitchRes = await fetch(`/api/capture/rooms/${roomId}/stitch`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        stitched_image_url: uploadRes.ok ? asset.file_url : undefined,
-        panorama_config: panoramaConfig,
-      }),
-    });
-    const result = await stitchRes.json();
-    setSaving(false);
+      if (!uploadRes.ok || !asset.file_url) {
+        throw new Error(asset.error ?? "Failed to upload panorama to storage");
+      }
 
-    if (!stitchRes.ok || result.needsRetake) {
-      toast.error(result.job?.error_message ?? "Could not save — try retaking");
-      setPhase("capturing");
-      return;
+      setHint("Creating scene…");
+      const stitchRes = await fetch(`/api/capture/rooms/${roomId}/stitch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stitched_image_url: asset.file_url,
+          panorama_config: panoramaConfig,
+          initial_yaw: originHeadingRef.current ?? 0,
+          initial_pitch: 0,
+          extracted_frame_count: framesRef.current.length,
+        }),
+      });
+      const result = await stitchRes.json();
+
+      if (!stitchRes.ok || result.needsRetake) {
+        throw new Error(result.job?.error_message ?? "Could not save scene");
+      }
+
+      // Source frames upload in background — not required for scene creation
+      void uploadFramesBackground(framesRef.current);
+
+      setPhase("complete");
+      toast.success(`${roomName} saved to cloud!`);
+      onComplete();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed — try again");
+      setPhase("preview");
+    } finally {
+      setSaving(false);
+      setHint("");
     }
-
-    void uploadFramesBackground(framesRef.current);
-    setPhase("complete");
-    toast.success(`${roomName} is ready!`);
-    onComplete();
   }
 
   function retake() {

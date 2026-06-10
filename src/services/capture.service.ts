@@ -99,12 +99,20 @@ export class CaptureService {
     const noView = sceneList.filter((s) => s.initial_yaw == null && s.initial_pitch == null);
     if (noView.length) issues.push(`${noView.length} room(s) have no saved starting view.`);
 
+    const scenesWithAnnotations = sceneList.filter((s) => {
+      const hotspots = (s.hotspots as unknown[]) ?? [];
+      return hotspots.length > 0;
+    });
+    if (sceneList.length > 1 && scenesWithAnnotations.length < sceneList.length) {
+      issues.push(`${sceneList.length - scenesWithAnnotations.length} room(s) have no annotations yet.`);
+    }
+
     const disconnected = sceneList.filter((s) => {
       const hotspots = (s.hotspots as { targetSceneId?: string }[]) ?? [];
-      return hotspots.length === 0 && sceneList.length > 1;
+      return !hotspots.some((h) => h.targetSceneId) && sceneList.length > 1;
     });
     if (disconnected.length) {
-      issues.push(`${disconnected.length} room(s) are not connected to other rooms.`);
+      issues.push(`${disconnected.length} room(s) have no navigation links to other rooms.`);
     }
 
     const incompleteRooms = (rooms ?? []).filter((r) => r.status !== "complete");

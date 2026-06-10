@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -14,10 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AIVoicePanel } from "@/components/buyer/ai-voice-panel";
-import { PanoramaViewer } from "@/components/buyer/panorama-viewer";
-import { AnnotationDetailSheet } from "@/components/buyer/annotation-detail-sheet";
-import { isNavigationPin } from "@/lib/pins/pin-library";
-import { normalizeAnnotations } from "@/types/annotations";
+import { SpatialTourShell } from "@/components/buyer/spatial-tour-shell";
 import type { SceneAnnotation } from "@/types/annotations";
 import { SplatViewer } from "@/components/buyer/splat-viewer";
 import { FamilySessionPanel } from "@/components/buyer/family-session-panel";
@@ -54,13 +50,11 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
   const [currentSceneId, setCurrentSceneId] = useState<string | null>(null);
   const [activeCheckpoint, setActiveCheckpoint] = useState<Checkpoint | null>(null);
   const [showAI, setShowAI] = useState(false);
-  const [showMap, setShowMap] = useState(false);
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [showFamily, setShowFamily] = useState(false);
   const [leadForm, setLeadForm] = useState({ name: "", phone: "" });
   const [gaze, setGaze] = useState({ yaw: 0, pitch: 0 });
   const [position3d, setPosition3d] = useState({ x: 0, y: 1, z: 3 });
-  const [activeAnnotation, setActiveAnnotation] = useState<SceneAnnotation | null>(null);
 
   const track = useCallback(async (eventType: string, payload?: Record<string, unknown>, heatmap?: Record<string, unknown>) => {
     if (!sessionId || !data) return;
@@ -177,10 +171,10 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
   const propertyName = data.properties?.name ?? "Property";
   const brandColor = data.properties?.projects?.branding?.primary_color;
   const logoUrl = data.properties?.projects?.branding?.logo_url;
-  const scene = data.tour_360_scenes?.find((s) => s.id === currentSceneId);
   const splat = data.splat_worlds?.[0];
   const floorMap = data.floor_maps?.[0];
   const checkpoints = data.checkpoints ?? [];
+  const scenes = data.tour_360_scenes ?? [];
 
   return (
     <div className="relative h-screen w-full bg-black text-white">
@@ -194,50 +188,30 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
             colliderMeshUrl={splat?.collider_mesh_url}
             onPositionChange={(x, y, z) => setPosition3d({ x, y, z })}
           />
-        ) : scene ? (
-          <PanoramaViewer
-            imageUrl={scene.image_url}
-            yaw={scene.initial_yaw ?? 0}
-            pitch={scene.initial_pitch ?? 0}
-            panoramaConfig={scene.panorama_config}
-            annotations={normalizeAnnotations((scene.hotspots as SceneAnnotation[]) ?? [])}
-            onAnnotationClick={(a) => {
-              track("annotation_clicked", { sceneId: currentSceneId, type: a.type, label: a.label });
-              if (a.targetSceneId && isNavigationPin(a.type)) {
-                track("hotspot_clicked", { fromSceneId: currentSceneId, toSceneId: a.targetSceneId, label: a.label });
-                setCurrentSceneId(a.targetSceneId);
-              } else {
-                setActiveAnnotation(a);
-              }
-            }}
-            onViewChange={(yaw, pitch) => setGaze({ yaw, pitch })}
-          />
         ) : (
-          <div className="flex h-full items-center justify-center text-white/60">No scenes available</div>
+          <SpatialTourShell
+            scenes={scenes}
+            currentSceneId={currentSceneId}
+            onSceneChange={(id) => {
+              track("room_entered", { sceneId: id });
+              setCurrentSceneId(id);
+            }}
+            floorMap={floorMap ? { image_url: floorMap.image_url, pins: floorMap.pins } : undefined}
+            checkpoints={checkpoints.map((cp) => ({ id: cp.id, title: cp.title, scene_id: cp.scene_id, checkpoint_type: cp.checkpoint_type }))}
+            projectName={projectName}
+            propertyName={propertyName}
+            brandColor={brandColor}
+            logoUrl={logoUrl}
+            onAnnotationClick={(a: SceneAnnotation) => track("annotation_clicked", { sceneId: currentSceneId, type: a.type, label: a.label })}
+            onViewChange={(yaw, pitch) => setGaze({ yaw, pitch })}
+            onFloorMapPinClick={(pinId, sceneId) => track("floor_map_pin_clicked", { pinId, sceneId })}
+            onCheckpointClick={(id) => {
+              const cp = checkpoints.find((c) => c.id === id);
+              if (cp) { setActiveCheckpoint(cp); track("checkpoint_opened", { checkpointId: id }); }
+            }}
+          />
         )}
       </div>
-
-      <div className="absolute left-0 right-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-4" style={brandColor ? { borderBottom: `2px solid ${brandColor}` } : undefined}>
-        {logoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoUrl} alt="Logo" className="mb-2 h-8 object-contain" />
-        )}
-        <p className="text-xs uppercase tracking-wider text-white/70">{projectName}</p>
-        <h1 className="text-lg font-semibold">{propertyName}</h1>
-        <Badge className="mt-1" variant="secondary">
-          {data.type === "worldlabs_splat" ? "3D Walkthrough" : data.type === "mobile_360_capture" ? "Mobile 360° Tour" : "360° Tour"}
-        </Badge>
-      </div>
-
-      {checkpoints.length > 1 && (
-        <div className="absolute left-4 top-24 flex flex-col gap-2">
-          {checkpoints.slice(0, 4).map((cp) => (
-            <Button key={cp.id} size="sm" variant="secondary" className="text-xs" onClick={() => { setActiveCheckpoint(cp); track("checkpoint_opened", { checkpointId: cp.id }); }}>
-              {cp.title}
-            </Button>
-          ))}
-        </div>
-      )}
 
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
         <div className="flex items-center justify-center gap-3">
@@ -245,7 +219,7 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
             <Mic className="h-5 w-5" />
           </Button>
           <Button size="icon" variant="ghost" className="rounded-full text-white" onClick={() => setShowAI(true)}><MessageSquare className="h-5 w-5" /></Button>
-          <Button size="icon" variant="ghost" className="rounded-full text-white" onClick={() => { setShowMap(!showMap); track("floor_map_opened"); }}><Map className="h-5 w-5" /></Button>
+          <Button size="icon" variant="ghost" className="rounded-full text-white" onClick={() => track("floor_map_opened")}><Map className="h-5 w-5" /></Button>
           <Button size="icon" variant="ghost" className="rounded-full text-white" onClick={() => setShowFamily(true)}><Users className="h-5 w-5" /></Button>
           <Button size="icon" variant="ghost" className="rounded-full text-white" onClick={() => setShowLeadForm(true)}><Phone className="h-5 w-5" /></Button>
         </div>
@@ -253,30 +227,6 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
 
       {sessionId && showAI && (
         <AIVoicePanel organizationId={data.organization_id} propertyId={data.property_id} sessionId={sessionId} sceneId={currentSceneId ?? undefined} onClose={() => setShowAI(false)} />
-      )}
-
-      {showMap && floorMap && (
-        <div className="absolute bottom-24 right-4 w-52 rounded-lg border bg-card p-2 text-foreground shadow-lg">
-          <p className="mb-2 text-xs font-medium">Floor Map</p>
-          <div className="relative aspect-square">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={floorMap.image_url} alt="Floor map" className="h-full w-full object-contain" />
-            {(floorMap.pins as { id: string; x: number; y: number; sceneId?: string }[]).map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className="absolute h-2 w-2 rounded-full bg-primary"
-                style={{ left: `${p.x}%`, top: `${p.y}%` }}
-                onClick={() => {
-                  if (p.sceneId) {
-                    track("floor_map_pin_clicked", { pinId: p.id, sceneId: p.sceneId });
-                    setCurrentSceneId(p.sceneId);
-                  }
-                }}
-              />
-            ))}
-          </div>
-        </div>
       )}
 
       {showFamily && sessionId && (
@@ -287,16 +237,6 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
           onInvited={() => track("invited_family")}
         />
       )}
-
-      <AnnotationDetailSheet
-        annotation={activeAnnotation}
-        onClose={() => setActiveAnnotation(null)}
-        onNavigate={(sceneId) => {
-          setCurrentSceneId(sceneId);
-          setActiveAnnotation(null);
-        }}
-        onCta={() => setShowLeadForm(true)}
-      />
 
       <CheckpointOverlay
         checkpoint={activeCheckpoint}

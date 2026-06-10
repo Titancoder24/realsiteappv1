@@ -148,9 +148,15 @@ function sampleRectilinear(frame: LoadedFrame, relYaw: number, pitch: number, va
 
 const yieldToUi = () => new Promise<void>((r) => setTimeout(r, 0));
 
+export interface StitchOptions {
+  /** Target ~5s processing — lower resolution, coarser scan. */
+  fast?: boolean;
+}
+
 export async function stitchFramesToEquirectangular(
   frames: { angleLabel?: string; imageUrl?: string; yaw?: number; blob?: Blob; exposure?: number; pitch?: number; roll?: number }[],
   onProgress?: (pct: number) => void,
+  options?: StitchOptions,
 ): Promise<StitchResult> {
   const yawFrames: YawFrame[] = frames.map((f, i) => ({
     yaw: f.yaw ?? i * (360 / frames.length),
@@ -180,8 +186,10 @@ export async function stitchFramesToEquirectangular(
   }
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
-  const outW = isMobile ? 4096 : 8192;
+  const outW = options?.fast ? 2048 : isMobile ? 4096 : 8192;
   const outH = outW / 2;
+  const rowStep = options?.fast ? 2 : 1;
+  const yieldEvery = options?.fast ? 24 : 48;
 
   const canvas = document.createElement("canvas");
   canvas.width = outW;
@@ -193,7 +201,7 @@ export async function stitchFramesToEquirectangular(
   const out = imageData.data;
   const total = outH * outW;
 
-  for (let y = 0; y < outH; y++) {
+  for (let y = 0; y < outH; y += rowStep) {
     for (let x = 0; x < outW; x++) {
       const yaw = (x / outW) * haov - haov / 2;
       const pitch = vOffset + vaov / 2 - (y / outH) * vaov;
@@ -224,9 +232,25 @@ export async function stitchFramesToEquirectangular(
         out[idx + 3] = 255;
       }
     }
-    if (y % 48 === 0) {
+    if (y % yieldEvery === 0) {
       onProgress?.(Math.round(((y * outW) / total) * 100));
       await yieldToUi();
+    }
+  }
+
+  // Fast mode: fill skipped rows by duplicating nearest rendered row
+  if (rowStep > 1) {
+    for (let y = 0; y < outH; y++) {
+      const srcY = Math.floor(y / rowStep) * rowStep;
+      if (y === srcY) continue;
+      for (let x = 0; x < outW; x++) {
+        const dst = (y * outW + x) * 4;
+        const src = (srcY * outW + x) * 4;
+        out[dst] = out[src];
+        out[dst + 1] = out[src + 1];
+        out[dst + 2] = out[src + 2];
+        out[dst + 3] = 255;
+      }
     }
   }
 

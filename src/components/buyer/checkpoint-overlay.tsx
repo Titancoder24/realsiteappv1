@@ -16,6 +16,7 @@ export type Checkpoint = {
   title: string;
   description?: string;
   checkpoint_type?: string;
+  scene_id?: string;
   cta_label?: string;
   cta_type?: string;
 };

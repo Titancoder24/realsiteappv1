@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { GuidedCameraCapture } from "@/components/capture/guided-camera";
 import { PublishChecklist } from "@/components/capture/publish-checklist";
 import { Tour360Builder } from "@/components/experience/tour360-builder";
+import { FloorMapBuilder } from "@/components/builders/floor-map-builder";
 import { ROOM_TEMPLATES, type PropertyTemplate } from "@/lib/capture/room-templates";
 import { CheckCircle2, Circle, Camera, Link2, Rocket, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -212,11 +213,40 @@ export function MobileCaptureWizard({
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Connect Rooms & Add Details</CardTitle>
-              <CardDescription>Matterport-style annotation — tap windows, doors, fixtures with 100+ pin types.</CardDescription>
+              <CardTitle className="text-base">Connect Scenes & Annotate</CardTitle>
+              <CardDescription>
+                Link rooms with navigation pins, annotate fixtures with 100+ pin types, and place scenes on the floor plan.
+              </CardDescription>
             </CardHeader>
+            <CardContent>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={async () => {
+                  const res = await fetch("/api/scenes/auto-link", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ experience_id: experienceId }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok) return toast.error(data.error ?? "Auto-link failed");
+                  toast.success(`Linked ${data.navigationPinsAdded} navigation pins across ${data.scenes} scenes`);
+                }}
+              >
+                Auto-link scenes (agent)
+              </Button>
+            </CardContent>
           </Card>
           <Tour360Builder experienceId={experienceId} propertyId={propertyId} />
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Floor Plan</CardTitle>
+              <CardDescription>Upload your floor plan and place pins for each captured scene.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FloorMapBuilder propertyId={propertyId} experienceId={experienceId} />
+            </CardContent>
+          </Card>
           <Button className="w-full" size="lg" onClick={() => setStep("publish")}>
             Continue — Preview & Publish
           </Button>
