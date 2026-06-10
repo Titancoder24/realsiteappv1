@@ -17,6 +17,7 @@ interface FloorMapPin {
 }
 
 export function ImmersiveSplatShell({
+  experienceId,
   splat,
   checkpoints = [],
   floorMap,
@@ -28,6 +29,7 @@ export function ImmersiveSplatShell({
   onCheckpointClick,
   onFloorMapPinClick,
 }: {
+  experienceId?: string;
   splat?: {
     spz_100k_url?: string;
     spz_500k_url?: string;
@@ -58,12 +60,12 @@ export function ImmersiveSplatShell({
       <div className="absolute inset-0">
         {hasSplat ? (
           <SplatViewer
+            experienceId={experienceId}
             spz100kUrl={splat?.spz_100k_url}
             spz500kUrl={splat?.spz_500k_url}
             spzFullResUrl={splat?.spz_full_res_url}
             worldMarbleUrl={splat?.world_marble_url}
             colliderMeshUrl={splat?.collider_mesh_url}
-            viewerUrl={splat?.viewer_url}
             splatFormat={(splat as { splat_format?: string })?.splat_format ?? (splat?.provider === "spaitial" ? "spz" : undefined)}
             onPositionChange={onPositionChange}
           />

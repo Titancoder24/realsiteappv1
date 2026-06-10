@@ -195,6 +195,7 @@ export function BuyerViewer({ slug, utm, preview = false }: { slug: string; utm?
       <div className="absolute inset-0">
         {isSplatExperience(data.type) ? (
           <ImmersiveSplatShell
+            experienceId={data.id}
             splat={splat}
             checkpoints={checkpoints}
             floorMap={floorMap ? { image_url: floorMap.image_url, pins: floorMap.pins } : undefined}

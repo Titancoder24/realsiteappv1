@@ -78,9 +78,9 @@ export function ImmersiveCheckpointPlacer({
         <div className="relative h-64 overflow-hidden rounded-lg border bg-black sm:h-80">
           {splat?.spz_full_res_url || splat?.spz_500k_url || splat?.viewer_url ? (
             <SplatViewer
+              experienceId={experienceId}
               spz500kUrl={splat.spz_500k_url}
               spzFullResUrl={splat.spz_full_res_url}
-              viewerUrl={splat.viewer_url}
               splatFormat={splat.provider === "spaitial" ? "spz" : undefined}
               onPositionChange={(x, y, z) => setPosition({ x, y, z })}
             />
