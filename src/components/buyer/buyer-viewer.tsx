@@ -19,7 +19,10 @@ import { ImmersiveSplatShell } from "@/components/buyer/immersive-splat-shell";
 import { FamilySessionPanel } from "@/components/buyer/family-session-panel";
 import { CheckpointOverlay, type Checkpoint } from "@/components/buyer/checkpoint-overlay";
 import { Map, Mic, MessageSquare, Phone, Users } from "lucide-react";
-import { isSplatExperience, type ExperienceType } from "@/types/domain";
+import { CinematicTourShell } from "@/components/buyer/cinematic-tour-shell";
+import { SceneAnnotationSheet } from "@/components/buyer/scene-annotation-sheet";
+import { isSceneIntelligence, isSplatExperience, type ExperienceType } from "@/types/domain";
+import type { PropertyScene, SceneAnnotationRecord } from "@/types/scene-intelligence";
 
 interface BuyerData {
   id: string;
@@ -49,6 +52,7 @@ interface BuyerData {
   }[];
   floor_maps?: { image_url: string; pins: { id: string; name: string; x: number; y: number; sceneId?: string; cameraPosition?: { x: number; y: number; z: number } }[] }[];
   checkpoints?: Checkpoint[];
+  property_scenes?: PropertyScene[];
 }
 
 export function BuyerViewer({ slug, utm, preview = false }: { slug: string; utm?: Record<string, string | undefined>; preview?: boolean }) {
@@ -64,6 +68,7 @@ export function BuyerViewer({ slug, utm, preview = false }: { slug: string; utm?
   const [leadForm, setLeadForm] = useState({ name: "", phone: "" });
   const [gaze, setGaze] = useState({ yaw: 0, pitch: 0 });
   const [position3d, setPosition3d] = useState({ x: 0, y: 1, z: 3 });
+  const [activeSceneAnnotation, setActiveSceneAnnotation] = useState<SceneAnnotationRecord | null>(null);
 
   const track = useCallback(async (eventType: string, payload?: Record<string, unknown>, heatmap?: Record<string, unknown>) => {
     if (!sessionId || !data) return;
@@ -95,8 +100,13 @@ export function BuyerViewer({ slug, utm, preview = false }: { slug: string; utm?
       })
       .then((exp) => {
         setData(exp);
-        const start = exp.tour_360_scenes?.find((s: { is_start_scene: boolean }) => s.is_start_scene) ?? exp.tour_360_scenes?.[0];
-        if (start) setCurrentSceneId(start.id);
+        if (isSceneIntelligence(exp.type)) {
+          const start = exp.property_scenes?.find((s: PropertyScene) => s.is_start_scene) ?? exp.property_scenes?.[0];
+          if (start) setCurrentSceneId(start.id);
+        } else {
+          const start = exp.tour_360_scenes?.find((s: { is_start_scene: boolean }) => s.is_start_scene) ?? exp.tour_360_scenes?.[0];
+          if (start) setCurrentSceneId(start.id);
+        }
         const infoCp = exp.checkpoints?.find((c: Checkpoint) => c.checkpoint_type === "info");
         if (infoCp) setActiveCheckpoint(infoCp);
       })
@@ -184,6 +194,7 @@ export function BuyerViewer({ slug, utm, preview = false }: { slug: string; utm?
   const floorMap = data.floor_maps?.[0];
   const checkpoints = data.checkpoints ?? [];
   const scenes = data.tour_360_scenes ?? [];
+  const propertyScenes = (data.property_scenes ?? []).sort((a, b) => a.scene_order - b.scene_order);
 
   return (
     <div className="relative h-screen w-full bg-black text-white">
@@ -193,7 +204,25 @@ export function BuyerViewer({ slug, utm, preview = false }: { slug: string; utm?
         </div>
       )}
       <div className="absolute inset-0">
-        {isSplatExperience(data.type) ? (
+        {isSceneIntelligence(data.type) ? (
+          <CinematicTourShell
+            scenes={propertyScenes}
+            currentSceneId={currentSceneId}
+            onSceneChange={(id) => {
+              track("room_entered", { sceneId: id });
+              setCurrentSceneId(id);
+            }}
+            projectName={projectName}
+            propertyName={propertyName}
+            brandColor={brandColor}
+            logoUrl={logoUrl}
+            onAnnotationClick={(ann) => {
+              setActiveSceneAnnotation(ann);
+              track("annotation_viewed", { sceneId: currentSceneId, annotationId: ann.id, title: ann.title });
+            }}
+            onSceneEvent={(type, payload) => track(type, payload)}
+          />
+        ) : isSplatExperience(data.type) ? (
           <ImmersiveSplatShell
             experienceId={data.id}
             splat={splat}
@@ -259,6 +288,15 @@ export function BuyerViewer({ slug, utm, preview = false }: { slug: string; utm?
           onInvited={() => track("invited_family")}
         />
       )}
+
+      <SceneAnnotationSheet
+        annotation={activeSceneAnnotation}
+        onClose={() => setActiveSceneAnnotation(null)}
+        onCta={(type) => {
+          track("annotation_cta_clicked", { sceneId: currentSceneId, ctaType: type });
+          if (type === "callback" || type === "book_visit") setShowLeadForm(true);
+        }}
+      />
 
       <CheckpointOverlay
         checkpoint={activeCheckpoint}

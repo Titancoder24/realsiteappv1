@@ -21,7 +21,9 @@ export default function ExperiencesPage() {
 
   const published = experiences.filter((e) => e.status === "published").length;
   const is3d = (t: string) => t === "worldlabs_splat" || t === "immersive_world";
-  const tours360 = experiences.filter((e) => !is3d(e.type)).length;
+  const isCinematic = (t: string) => t === "scene_intelligence";
+  const tours360 = experiences.filter((e) => !is3d(e.type) && !isCinematic(e.type)).length;
+  const cinematic = experiences.filter((e) => isCinematic(e.type)).length;
   const tours3d = experiences.filter((e) => is3d(e.type)).length;
 
   const statusMix = useMemo(() => {
@@ -34,12 +36,13 @@ export default function ExperiencesPage() {
   }, [experiences, published]);
 
   const typeMix = useMemo(() => {
-    const total = Math.max(1, tours360 + tours3d);
+    const total = Math.max(1, tours360 + tours3d + cinematic);
     return [
       { category: "360° Panorama", share: Math.round((tours360 / total) * 100) },
       { category: "3D Walkthrough", share: Math.round((tours3d / total) * 100) },
+      { category: "Cinematic Viewer", share: Math.round((cinematic / total) * 100) },
     ].filter((d) => d.share > 0);
-  }, [tours360, tours3d]);
+  }, [tours360, tours3d, cinematic]);
 
   return (
     <div className="space-y-6">
@@ -72,12 +75,12 @@ export default function ExperiencesPage() {
             <CardHeader className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3 min-w-0">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  {is3d(e.type) ? <Globe className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
+                  {isCinematic(e.type) ? <Compass className="h-5 w-5" /> : is3d(e.type) ? <Globe className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
                 </div>
                 <div className="min-w-0">
                   <CardTitle className="text-base truncate">{e.properties?.name ?? "Property"}</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    {e.type === "immersive_world" ? "Immersive World" : is3d(e.type) ? "3D Walkthrough" : "360° Panorama Tour"}
+                    {e.type === "scene_intelligence" ? "Cinematic Property Viewer" : e.type === "immersive_world" ? "Immersive World" : is3d(e.type) ? "3D Walkthrough" : "360° Panorama Tour"}
                   </p>
                 </div>
               </div>

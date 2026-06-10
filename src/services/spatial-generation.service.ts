@@ -102,12 +102,27 @@ class MobileCaptureEngine implements SpatialEngine {
   }
 }
 
+/** Scene Intelligence — flat images with motion; no external generation pipeline. */
+class SceneIntelligenceEngine implements SpatialEngine {
+  type: ExperienceType = "scene_intelligence";
+
+  async generate(input: SpatialGenerationInput): Promise<SpatialGenerationResult> {
+    const supabase = createAdminClient();
+    await supabase
+      .from("experiences")
+      .update({ status: "ready_for_review", updated_at: new Date().toISOString() })
+      .eq("id", input.experienceId);
+    return { engine: this.type, status: "ready_for_review" };
+  }
+}
+
 export class SpatialGenerationService {
   private engines: Record<ExperienceType, SpatialEngine> = {
     "360_realistic": new Tour360Engine(),
     worldlabs_splat: new WorldLabsEngine(),
     immersive_world: new ImmersiveWorldEngine(),
     mobile_360_capture: new MobileCaptureEngine(),
+    scene_intelligence: new SceneIntelligenceEngine(),
   };
 
   getEngine(type: ExperienceType): SpatialEngine {

@@ -77,17 +77,56 @@ export class RAGService {
     }
 
     if (params.sceneId) {
-      const { data: scene } = await supabase.from("tour_360_scenes").select("id, room_name, ai_context").eq("id", params.sceneId).single();
-      if (scene?.ai_context) {
+      const { data: scene360 } = await supabase.from("tour_360_scenes").select("id, room_name, ai_context").eq("id", params.sceneId).single();
+      if (scene360?.ai_context) {
         results.unshift({
-          id: scene.id,
+          id: scene360.id,
           category: "room_context",
-          title: scene.room_name,
-          content: scene.ai_context,
+          title: scene360.room_name,
+          content: scene360.ai_context,
           sourceType: "scene",
-          sourceId: scene.id,
+          sourceId: scene360.id,
           score: 0.9,
         });
+      }
+
+      const { data: propScene } = await supabase.from("property_scenes").select("id, title, ai_context, description").eq("id", params.sceneId).single();
+      if (propScene) {
+        const content = propScene.ai_context || propScene.description;
+        if (content) {
+          results.unshift({
+            id: propScene.id,
+            category: "room_context",
+            title: propScene.title,
+            content,
+            sourceType: "property_scene",
+            sourceId: propScene.id,
+            score: 0.92,
+          });
+        }
+
+        const { data: anns } = await supabase
+          .from("scene_annotations")
+          .select("id, title, description, short_description, ai_context")
+          .eq("scene_id", params.sceneId)
+          .eq("visibility", "public")
+          .eq("rag_enabled", true)
+          .limit(5);
+
+        for (const ann of anns ?? []) {
+          const annContent = [ann.title, ann.short_description, ann.description, ann.ai_context].filter(Boolean).join(". ");
+          if (annContent) {
+            results.unshift({
+              id: ann.id,
+              category: "room_context",
+              title: ann.title,
+              content: annContent,
+              sourceType: "scene_annotation",
+              sourceId: ann.id,
+              score: 0.88,
+            });
+          }
+        }
       }
     }
 

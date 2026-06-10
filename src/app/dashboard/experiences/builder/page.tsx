@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Tour360Builder } from "@/components/experience/tour360-builder";
 import { WorldLabsBuilder } from "@/components/experience/worldlabs-builder";
 import { ImmersiveWorldBuilder } from "@/components/experience/immersive-world-builder";
+import { SceneIntelligenceBuilder } from "@/components/experience/scene-intelligence-builder";
 import type { ExperienceType } from "@/types/domain";
 
 function BuilderContent() {
@@ -18,7 +19,9 @@ function BuilderContent() {
       <div>
         <h1 className="text-2xl font-semibold">Experience Builder</h1>
         <p className="text-muted-foreground">
-          {type === "worldlabs_splat"
+          {type === "scene_intelligence"
+            ? "Scene Intelligence Builder"
+            : type === "worldlabs_splat"
             ? "Generate 3D Walkthrough"
             : type === "immersive_world"
               ? "Immersive World"
@@ -27,7 +30,9 @@ function BuilderContent() {
                 : "360° Realistic Experience"}
         </p>
       </div>
-      {type === "worldlabs_splat" ? (
+      {type === "scene_intelligence" ? (
+        <SceneIntelligenceBuilder experienceId={experienceId} propertyId={propertyId} />
+      ) : type === "worldlabs_splat" ? (
         <WorldLabsBuilder experienceId={experienceId} propertyId={propertyId} />
       ) : type === "immersive_world" ? (
         <ImmersiveWorldBuilder experienceId={experienceId} propertyId={propertyId} />

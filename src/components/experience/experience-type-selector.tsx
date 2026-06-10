@@ -2,11 +2,18 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Camera, Box, Smartphone, Sparkles } from "lucide-react";
+import { Camera, Box, Smartphone, Sparkles, Clapperboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ExperienceType } from "@/types/domain";
 
 const options: { type: ExperienceType; title: string; description: string; badge: string; icon: typeof Camera }[] = [
+  {
+    type: "scene_intelligence",
+    title: "Cinematic Property Viewer",
+    description: "Upload listing photos → cinematic motion scenes → pin objects → AI knowledge → interactive viewer.",
+    badge: "Scene Intelligence",
+    icon: Clapperboard,
+  },
   {
     type: "mobile_360_capture",
     title: "Mobile 360° Capture Walkthrough",
@@ -67,7 +74,9 @@ export function ExperienceTypeSelector({
               </CardHeader>
               <CardContent>
                 <p className="text-xs text-muted-foreground">
-                  {opt.type === "mobile_360_capture"
+                  {opt.type === "scene_intelligence"
+                    ? "Upload images → edit → motion → annotate → publish viewer"
+                    : opt.type === "mobile_360_capture"
                     ? "Choose rooms → capture with phone → connect → publish"
                     : opt.type === "360_realistic"
                       ? "Upload panoramas → create rooms → add hotspots → publish"
