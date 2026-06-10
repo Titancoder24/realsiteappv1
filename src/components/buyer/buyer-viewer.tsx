@@ -15,7 +15,7 @@ import {
 import { AIVoicePanel } from "@/components/buyer/ai-voice-panel";
 import { SpatialTourShell } from "@/components/buyer/spatial-tour-shell";
 import type { SceneAnnotation } from "@/types/annotations";
-import { SplatViewer } from "@/components/buyer/splat-viewer";
+import { ImmersiveSplatShell } from "@/components/buyer/immersive-splat-shell";
 import { FamilySessionPanel } from "@/components/buyer/family-session-panel";
 import { CheckpointOverlay, type Checkpoint } from "@/components/buyer/checkpoint-overlay";
 import { Map, Mic, MessageSquare, Phone, Users } from "lucide-react";
@@ -24,6 +24,7 @@ import { isSplatExperience, type ExperienceType } from "@/types/domain";
 interface BuyerData {
   id: string;
   type: ExperienceType;
+  status?: string;
   organization_id: string;
   property_id: string;
   properties?: { name: string; projects?: { name: string; branding?: { primary_color?: string; logo_url?: string } } };
@@ -37,12 +38,12 @@ interface BuyerData {
     initial_pitch?: number;
     panorama_config?: { haov?: number; vaov?: number; vOffset?: number; hfov?: number };
   }[];
-  splat_worlds?: { spz_100k_url?: string; spz_500k_url?: string; spz_full_res_url?: string; world_marble_url?: string; collider_mesh_url?: string }[];
+  splat_worlds?: { spz_100k_url?: string; spz_500k_url?: string; spz_full_res_url?: string; world_marble_url?: string; collider_mesh_url?: string; viewer_url?: string }[];
   floor_maps?: { image_url: string; pins: { id: string; name: string; x: number; y: number; sceneId?: string; cameraPosition?: { x: number; y: number; z: number } }[] }[];
   checkpoints?: Checkpoint[];
 }
 
-export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, string | undefined> }) {
+export function BuyerViewer({ slug, utm, preview = false }: { slug: string; utm?: Record<string, string | undefined>; preview?: boolean }) {
   const [data, setData] = useState<BuyerData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,7 +77,7 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
   useEffect(() => {
     setLoading(true);
     setLoadError(null);
-    fetch(`/api/experiences/public/${slug}`)
+    fetch(`/api/experiences/public/${slug}${preview ? "?preview=1" : ""}`)
       .then(async (r) => {
         if (!r.ok) {
           const err = await r.json().catch(() => ({}));
@@ -93,7 +94,7 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
       })
       .catch((e) => setLoadError(e instanceof Error ? e.message : "Failed to load"))
       .finally(() => setLoading(false));
-  }, [slug]);
+  }, [slug, preview]);
 
   useEffect(() => {
     if (!data) return;
@@ -178,15 +179,27 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
 
   return (
     <div className="relative h-screen w-full bg-black text-white">
+      {preview && data.status === "ready_for_review" && (
+        <div className="absolute left-0 right-0 top-0 z-50 bg-amber-500/90 px-4 py-2 text-center text-sm font-medium text-black">
+          Preview mode — publish the experience to share with buyers.
+        </div>
+      )}
       <div className="absolute inset-0">
         {isSplatExperience(data.type) ? (
-          <SplatViewer
-            spz100kUrl={splat?.spz_100k_url}
-            spz500kUrl={splat?.spz_500k_url}
-            spzFullResUrl={splat?.spz_full_res_url}
-            worldMarbleUrl={splat?.world_marble_url}
-            colliderMeshUrl={splat?.collider_mesh_url}
+          <ImmersiveSplatShell
+            splat={splat}
+            checkpoints={checkpoints}
+            floorMap={floorMap ? { image_url: floorMap.image_url, pins: floorMap.pins } : undefined}
+            projectName={projectName}
+            propertyName={propertyName}
+            brandColor={brandColor}
+            logoUrl={logoUrl}
             onPositionChange={(x, y, z) => setPosition3d({ x, y, z })}
+            onCheckpointClick={(id) => {
+              const cp = checkpoints.find((c) => c.id === id);
+              if (cp) { setActiveCheckpoint(cp); track("checkpoint_opened", { checkpointId: id }); }
+            }}
+            onFloorMapPinClick={(pinId) => track("floor_map_pin_clicked", { pinId })}
           />
         ) : (
           <SpatialTourShell

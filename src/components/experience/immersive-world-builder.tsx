@@ -34,6 +34,7 @@ export function ImmersiveWorldBuilder({ experienceId, propertyId }: { experience
   const [uploading, setUploading] = useState(false);
   const [mediaAssetIds, setMediaAssetIds] = useState<string[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [slug, setSlug] = useState<string | null>(null);
 
   const syncUrl = useCallback(
     (next: Partial<BuilderState>) => {
@@ -62,6 +63,7 @@ export function ImmersiveWorldBuilder({ experienceId, propertyId }: { experience
         const urlJobId = searchParams.get("jobId");
         const urlStep = searchParams.get("step");
 
+        if (data.slug) setSlug(data.slug);
         if (data.notes) setNotes(data.notes);
         if (data.previewUrl) setPreviewUrl(data.previewUrl);
         if (data.mediaAssetIds?.length) setMediaAssetIds(data.mediaAssetIds);
@@ -121,6 +123,10 @@ export function ImmersiveWorldBuilder({ experienceId, propertyId }: { experience
     setStep(4);
     syncUrl({ jobId, step: 4 });
   }
+
+  const previewHref = slug
+    ? `/view/${slug}?preview=1`
+    : `/view/${experienceId}?preview=1`;
 
   function handleRetry() {
     setJobId(null);
@@ -228,7 +234,7 @@ export function ImmersiveWorldBuilder({ experienceId, propertyId }: { experience
               <a href={`/dashboard/checkpoints?propertyId=${propertyId}&experienceId=${experienceId}`}>Add Checkpoints</a>
             </Button>
             <Button asChild variant="outline">
-              <a href={`/view/${experienceId}`} target="_blank" rel="noreferrer">Preview 3D Viewer</a>
+              <a href={previewHref} target="_blank" rel="noreferrer">Preview 3D Viewer</a>
             </Button>
             <Button onClick={publish}>Publish Experience</Button>
           </CardContent>
@@ -243,7 +249,7 @@ export function ImmersiveWorldBuilder({ experienceId, propertyId }: { experience
           </CardHeader>
           <CardContent>
             <Button asChild>
-              <a href={`/view/${experienceId}`} target="_blank" rel="noreferrer">View Live Tour</a>
+              <a href={slug ? `/view/${slug}` : previewHref} target="_blank" rel="noreferrer">View Live Tour</a>
             </Button>
           </CardContent>
         </Card>

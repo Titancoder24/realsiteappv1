@@ -24,7 +24,7 @@ export async function GET(req: Request) {
     const admin = createAdminClient();
     const { data: experience, error: expErr } = await admin
       .from("experiences")
-      .select("id, status, property_id, type")
+      .select("id, status, property_id, type, slug")
       .eq("id", experienceId)
       .eq("organization_id", profile.organization_id!)
       .single();
@@ -51,6 +51,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       experienceId,
+      slug: experience.slug,
       experienceStatus: experience.status,
       jobId: job?.id ?? null,
       jobStatus: job?.status ?? null,

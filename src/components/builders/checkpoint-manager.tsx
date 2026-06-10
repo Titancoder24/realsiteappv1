@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ImmersiveCheckpointPlacer } from "@/components/experience/immersive-checkpoint-placer";
 import { toast } from "sonner";
 
 interface Checkpoint {
@@ -21,9 +22,18 @@ const TYPES = ["info", "room_detail", "view", "amenity", "cta", "pricing", "lega
 export function CheckpointManager({ experienceId, propertyId }: { experienceId: string; propertyId: string }) {
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [form, setForm] = useState({ title: "", description: "", checkpoint_type: "info", ai_context: "" });
+  const [experienceType, setExperienceType] = useState<string | null>(null);
+  const [slug, setSlug] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/checkpoints?experienceId=${experienceId}`).then((r) => r.json()).then(setCheckpoints).catch(() => {});
+    fetch(`/api/experiences/${experienceId}`)
+      .then((r) => r.json())
+      .then((exp) => {
+        setExperienceType(exp.type ?? null);
+        setSlug(exp.slug ?? null);
+      })
+      .catch(() => {});
   }, [experienceId]);
 
   async function create() {
@@ -39,8 +49,13 @@ export function CheckpointManager({ experienceId, propertyId }: { experienceId: 
     toast.success("Checkpoint saved + synced to RAG");
   }
 
+  const isImmersive = experienceType === "immersive_world" || experienceType === "worldlabs_splat";
+
   return (
     <div className="space-y-6">
+      {isImmersive && (
+        <ImmersiveCheckpointPlacer experienceId={experienceId} propertyId={propertyId} slug={slug ?? undefined} />
+      )}
       <Card>
         <CardHeader><CardTitle>Add Checkpoint</CardTitle></CardHeader>
         <CardContent className="space-y-3">

@@ -14,7 +14,9 @@ function ViewContent() {
     utm_campaign: searchParams.get("utm_campaign") ?? undefined,
   };
 
-  return <BuyerViewer slug={slug} utm={utm} />;
+  const preview = searchParams.get("preview") === "1";
+
+  return <BuyerViewer slug={slug} utm={utm} preview={preview} />;
 }
 
 export default function BuyerViewPage() {

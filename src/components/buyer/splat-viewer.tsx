@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function pickSplatUrl(urls: { spz100k?: string; spz500k?: string; spzFull?: string; marbleUrl?: string }) {
   if (typeof window === "undefined") return urls.spz500k ?? urls.marbleUrl;
@@ -28,11 +28,16 @@ export function SplatViewer({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const keysRef = useRef<Record<string, boolean>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const selectedUrl = pickSplatUrl({ spz100k: spz100kUrl, spz500k: spz500kUrl, spzFull: spzFullResUrl, marbleUrl: worldMarbleUrl });
-    if (!selectedUrl) return;
+    if (!selectedUrl) {
+      setLoadError("No 3D world file available.");
+      return;
+    }
+    setLoadError(null);
     const splatUrl: string = selectedUrl;
 
     let viewer: { dispose?: () => void; camera?: { position: { x: number; y: number; z: number } } } | null = null;
@@ -76,9 +81,11 @@ export function SplatViewer({
         });
         await (viewer as { addSplatScene: (u: string) => Promise<void> }).addSplatScene(splatUrl);
         void colliderMeshUrl;
-      } catch {
+      } catch (err) {
         if (containerRef.current && worldMarbleUrl) {
           containerRef.current.innerHTML = `<iframe src="${worldMarbleUrl}" class="h-full w-full border-0" allow="fullscreen" />`;
+        } else {
+          setLoadError(err instanceof Error ? err.message : "Failed to load 3D world");
         }
       }
     }
@@ -96,6 +103,11 @@ export function SplatViewer({
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full bg-black" />
+      {loadError && (
+        <p className="absolute inset-0 flex items-center justify-center bg-black/80 px-6 text-center text-sm text-white/70">
+          {loadError}
+        </p>
+      )}
       <p className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-1 text-xs text-white/70">WASD / Arrow keys to move</p>
     </div>
   );
