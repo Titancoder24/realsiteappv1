@@ -116,6 +116,21 @@ class SceneIntelligenceEngine implements SpatialEngine {
   }
 }
 
+/** AI Cinematic Walkthrough — image upload + enhancement + scroll viewer pipeline. */
+class CinematicWalkthroughEngine implements SpatialEngine {
+  type: ExperienceType = "cinematic_walkthrough";
+
+  async generate(input: SpatialGenerationInput): Promise<SpatialGenerationResult> {
+    const supabase = createAdminClient();
+    await supabase.from("walkthrough_checklists").upsert({ experience_id: input.experienceId }, { onConflict: "experience_id" });
+    await supabase
+      .from("experiences")
+      .update({ status: "draft", updated_at: new Date().toISOString() })
+      .eq("id", input.experienceId);
+    return { engine: this.type, status: "draft" };
+  }
+}
+
 export class SpatialGenerationService {
   private engines: Record<ExperienceType, SpatialEngine> = {
     "360_realistic": new Tour360Engine(),
@@ -123,6 +138,7 @@ export class SpatialGenerationService {
     immersive_world: new ImmersiveWorldEngine(),
     mobile_360_capture: new MobileCaptureEngine(),
     scene_intelligence: new SceneIntelligenceEngine(),
+    cinematic_walkthrough: new CinematicWalkthroughEngine(),
   };
 
   getEngine(type: ExperienceType): SpatialEngine {

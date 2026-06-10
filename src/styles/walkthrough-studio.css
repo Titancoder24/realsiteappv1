@@ -1,0 +1,183 @@
+/* AI Cinematic Walkthrough Studio */
+
+.wt-studio {
+  --wt-bg: #f8f9fb;
+  --wt-panel: #ffffff;
+  --wt-border: #e4e4e7;
+  --wt-accent: #2563eb;
+  --wt-accent-soft: #eff6ff;
+  --wt-text: #18181b;
+  --wt-muted: #71717a;
+  min-height: calc(100vh - 8rem);
+  background: var(--wt-bg);
+  border: 1px solid var(--wt-border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--wt-panel);
+  border-bottom: 1px solid var(--wt-border);
+}
+
+.wt-steps {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.75rem 1.25rem;
+  background: var(--wt-panel);
+  border-bottom: 1px solid var(--wt-border);
+}
+
+.wt-step {
+  flex-shrink: 0;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--wt-muted);
+  border: 1px solid var(--wt-border);
+  background: #fff;
+}
+
+.wt-step[data-active="true"] {
+  background: var(--wt-accent-soft);
+  color: var(--wt-accent);
+  border-color: #bfdbfe;
+}
+
+.wt-step[data-done="true"] {
+  color: #16a34a;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.wt-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+.wt-card {
+  background: var(--wt-panel);
+  border: 1px solid var(--wt-border);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+.wt-grid-2 {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.wt-image-card {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--wt-border);
+  background: #000;
+}
+
+.wt-image-card img {
+  width: 100%;
+  aspect-ratio: 4/3;
+  object-fit: cover;
+}
+
+.wt-checklist {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.wt-check-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.wt-check-item[data-done="true"] { color: #16a34a; }
+.wt-check-item[data-done="false"] { color: var(--wt-muted); }
+
+/* RAG Chat UI */
+.wt-rag-chat {
+  display: flex;
+  flex-direction: column;
+  height: 520px;
+  border: 1px solid var(--wt-border);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.wt-rag-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wt-rag-bubble {
+  max-width: 85%;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.wt-rag-bubble[data-role="user"] {
+  align-self: flex-end;
+  background: var(--wt-accent);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.wt-rag-bubble[data-role="assistant"] {
+  align-self: flex-start;
+  background: #f4f4f5;
+  color: var(--wt-text);
+  border-bottom-left-radius: 4px;
+}
+
+.wt-rag-input {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--wt-border);
+  background: #fafafa;
+}
+
+.wt-rag-input textarea {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--wt-border);
+  border-radius: 8px;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  min-height: 44px;
+  max-height: 120px;
+}
+
+/* Scroll walkthrough viewer */
+.wt-scroll-viewer {
+  height: 100vh;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  background: #000;
+}
+
+.wt-scroll-section {
+  height: 100vh;
+  scroll-snap-align: start;
+  position: relative;
+}

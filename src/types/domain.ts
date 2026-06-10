@@ -1,4 +1,10 @@
-export type ExperienceType = "360_realistic" | "worldlabs_splat" | "immersive_world" | "mobile_360_capture" | "scene_intelligence";
+export type ExperienceType =
+  | "360_realistic"
+  | "worldlabs_splat"
+  | "immersive_world"
+  | "mobile_360_capture"
+  | "scene_intelligence"
+  | "cinematic_walkthrough";
 
 export function isSplatExperience(type: ExperienceType | string): boolean {
   return type === "worldlabs_splat" || type === "immersive_world";
@@ -6,6 +12,10 @@ export function isSplatExperience(type: ExperienceType | string): boolean {
 
 export function isSceneIntelligence(type: ExperienceType | string): boolean {
   return type === "scene_intelligence";
+}
+
+export function isCinematicWalkthrough(type: ExperienceType | string): boolean {
+  return type === "cinematic_walkthrough";
 }
 
 export type CaptureRoomStatus = "not_started" | "capturing" | "processing" | "needs_retake" | "complete";

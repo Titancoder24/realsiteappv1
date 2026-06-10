@@ -12,7 +12,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     if (!exp.slug) return jsonError("Experience missing slug", 400);
 
-    const publishedUrl = `${env.NEXT_PUBLIC_APP_URL}/view/${exp.slug}`;
+    const publishedUrl = exp.type === "cinematic_walkthrough"
+      ? `${env.NEXT_PUBLIC_APP_URL}/walkthrough/${exp.slug}`
+      : `${env.NEXT_PUBLIC_APP_URL}/view/${exp.slug}`;
 
     if (exp.primary_experience) {
       await admin.from("experiences").update({ primary_experience: false }).eq("property_id", exp.property_id);

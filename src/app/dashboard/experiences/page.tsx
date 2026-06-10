@@ -21,9 +21,12 @@ export default function ExperiencesPage() {
 
   const published = experiences.filter((e) => e.status === "published").length;
   const is3d = (t: string) => t === "worldlabs_splat" || t === "immersive_world";
-  const isCinematic = (t: string) => t === "scene_intelligence";
+  const isSceneStudio = (t: string) => t === "scene_intelligence";
+  const isWalkthrough = (t: string) => t === "cinematic_walkthrough";
+  const isCinematic = (t: string) => isSceneStudio(t) || isWalkthrough(t);
   const tours360 = experiences.filter((e) => !is3d(e.type) && !isCinematic(e.type)).length;
-  const cinematic = experiences.filter((e) => isCinematic(e.type)).length;
+  const walkthroughs = experiences.filter((e) => isWalkthrough(e.type)).length;
+  const sceneStudio = experiences.filter((e) => isSceneStudio(e.type)).length;
   const tours3d = experiences.filter((e) => is3d(e.type)).length;
 
   const statusMix = useMemo(() => {
@@ -36,13 +39,14 @@ export default function ExperiencesPage() {
   }, [experiences, published]);
 
   const typeMix = useMemo(() => {
-    const total = Math.max(1, tours360 + tours3d + cinematic);
+    const total = Math.max(1, tours360 + tours3d + walkthroughs + sceneStudio);
     return [
       { category: "360° Panorama", share: Math.round((tours360 / total) * 100) },
       { category: "3D Walkthrough", share: Math.round((tours3d / total) * 100) },
-      { category: "Cinematic Viewer", share: Math.round((cinematic / total) * 100) },
+      { category: "AI Walkthrough", share: Math.round((walkthroughs / total) * 100) },
+      { category: "Scene Studio", share: Math.round((sceneStudio / total) * 100) },
     ].filter((d) => d.share > 0);
-  }, [tours360, tours3d, cinematic]);
+  }, [tours360, tours3d, walkthroughs, sceneStudio]);
 
   return (
     <div className="space-y-6">
@@ -80,14 +84,16 @@ export default function ExperiencesPage() {
                 <div className="min-w-0">
                   <CardTitle className="text-base truncate">{e.properties?.name ?? "Property"}</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    {e.type === "scene_intelligence" ? "Cinematic Property Viewer" : e.type === "immersive_world" ? "Immersive World" : is3d(e.type) ? "3D Walkthrough" : "360° Panorama Tour"}
+                    {e.type === "cinematic_walkthrough" ? "AI Cinematic Walkthrough" : e.type === "scene_intelligence" ? "Scene Intelligence Studio" : e.type === "immersive_world" ? "Immersive World" : is3d(e.type) ? "3D Walkthrough" : "360° Panorama Tour"}
                   </p>
                 </div>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Badge variant={e.status === "published" ? "success" : "secondary"}>{e.status}</Badge>
                 <Button size="sm" variant="outline" asChild>
-                  <Link href={`/dashboard/experiences/builder?type=${e.type}&id=${e.id}&propertyId=${e.property_id ?? ""}`}>Edit Tour</Link>
+                  <Link href={e.type === "cinematic_walkthrough" ? `/dashboard/walkthrough/${e.id}?propertyId=${e.property_id ?? ""}` : `/dashboard/experiences/builder?type=${e.type}&id=${e.id}&propertyId=${e.property_id ?? ""}`}>
+                    {e.type === "cinematic_walkthrough" ? "Open Walkthrough" : "Edit Tour"}
+                  </Link>
                 </Button>
               </div>
             </CardHeader>

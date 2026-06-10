@@ -14,6 +14,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
       properties(id, name, project_id, projects(name, branding, organizations(branding))),
       tour_360_scenes(*),
       property_scenes(*, scene_annotations(*)),
+      walkthrough_scenes(*, walkthrough_annotations(*)),
       splat_worlds(*),
       floor_maps(*),
       checkpoints(*)

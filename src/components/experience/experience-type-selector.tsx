@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Box, Smartphone, Sparkles, Clapperboard, ArrowRight } from "lucide-react";
+import { Camera, Box, Smartphone, Sparkles, Clapperboard, ArrowRight, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ExperienceType } from "@/types/domain";
 import "@/styles/scene-studio.css";
@@ -66,6 +66,17 @@ const sceneIntelligenceOption: ExperienceOption = {
   nextLabel: "Open Scene Studio",
 };
 
+const cinematicWalkthroughOption: ExperienceOption = {
+  type: "cinematic_walkthrough",
+  title: "AI Cinematic Walkthrough",
+  description: "Upload any property images — AI enhances, plans scenes, and publishes a scroll-controlled cinematic buyer walkthrough with RAG and CRM.",
+  badge: "Level 1",
+  badgeVariant: "new",
+  icon: Film,
+  steps: "Upload → enhance → scenes → scroll viewer → publish",
+  nextLabel: "Start walkthrough",
+};
+
 function PickerCard({
   opt,
   active,
@@ -80,7 +91,7 @@ function PickerCard({
   onContinue: (type: ExperienceType) => void;
 }) {
   const Icon = opt.icon;
-  const featured = opt.type === "scene_intelligence";
+  const featured = opt.type === "cinematic_walkthrough" || opt.type === "scene_intelligence";
 
   return (
     <div
@@ -144,7 +155,18 @@ export function ExperienceTypeSelector({
       </div>
 
       <div>
-        <p className="picker-section-label">Interactive listing viewer</p>
+        <p className="picker-section-label">AI cinematic walkthrough</p>
+        <PickerCard
+          opt={cinematicWalkthroughOption}
+          active={selected === cinematicWalkthroughOption.type}
+          disabled={disabled}
+          loading={continuing && selected === cinematicWalkthroughOption.type}
+          onContinue={onContinue}
+        />
+      </div>
+
+      <div>
+        <p className="picker-section-label">Scene studio (advanced)</p>
         <PickerCard
           opt={sceneIntelligenceOption}
           active={selected === sceneIntelligenceOption.type}

@@ -42,6 +42,8 @@ export default function NewExperiencePage() {
     if (!res.ok) return toast.error(data.error ?? "Failed to create experience");
     if (type === "mobile_360_capture") {
       router.push(`/dashboard/capture/${data.id}?propertyId=${propertyId}`);
+    } else if (type === "cinematic_walkthrough") {
+      router.push(`/dashboard/walkthrough/${data.id}?propertyId=${propertyId}`);
     } else {
       router.push(`/dashboard/experiences/builder?type=${type}&id=${data.id}&propertyId=${propertyId}`);
     }

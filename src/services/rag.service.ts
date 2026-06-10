@@ -90,6 +90,45 @@ export class RAGService {
         });
       }
 
+      const { data: wtScene } = await supabase.from("walkthrough_scenes").select("id, title, ai_context, description, caption").eq("id", params.sceneId).single();
+      if (wtScene) {
+        const content = wtScene.ai_context || wtScene.description || wtScene.caption;
+        if (content) {
+          results.unshift({
+            id: wtScene.id,
+            category: "room_context",
+            title: wtScene.title,
+            content,
+            sourceType: "walkthrough_scene",
+            sourceId: wtScene.id,
+            score: 0.93,
+          });
+        }
+
+        const { data: wtAnns } = await supabase
+          .from("walkthrough_annotations")
+          .select("id, title, description, short_description, ai_context")
+          .eq("scene_id", params.sceneId)
+          .eq("visibility", "public")
+          .eq("rag_enabled", true)
+          .limit(5);
+
+        for (const ann of wtAnns ?? []) {
+          const annContent = [ann.title, ann.short_description, ann.description, ann.ai_context].filter(Boolean).join(". ");
+          if (annContent) {
+            results.unshift({
+              id: ann.id,
+              category: "room_context",
+              title: ann.title,
+              content: annContent,
+              sourceType: "walkthrough_annotation",
+              sourceId: ann.id,
+              score: 0.89,
+            });
+          }
+        }
+      }
+
       const { data: propScene } = await supabase.from("property_scenes").select("id, title, ai_context, description").eq("id", params.sceneId).single();
       if (propScene) {
         const content = propScene.ai_context || propScene.description;
