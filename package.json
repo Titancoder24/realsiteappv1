@@ -13,6 +13,7 @@
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
     "@mkkellogg/gaussian-splats-3d": "^0.4.7",
+    "@openrouter/sdk": "^0.12.79",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-avatar": "^1.1.10",

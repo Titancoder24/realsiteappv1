@@ -60,7 +60,7 @@ export async function runImageEnhancement(imageId: string) {
   const { data: job } = await admin.from("walkthrough_enhancement_jobs").insert({
     image_id: imageId,
     status: "processing",
-    model: process.env.OPENROUTER_IMAGE_MODEL ?? "google/gemini-2.5-flash-image-preview",
+    model: process.env.OPENROUTER_IMAGE_MODEL ?? "google/gemini-3.1-flash-image-preview",
     prompt: "Property photo enhancement",
     started_at: new Date().toISOString(),
   }).select().single();

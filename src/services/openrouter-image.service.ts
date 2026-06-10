@@ -1,4 +1,4 @@
-import { requireServerKey } from "@/lib/env";
+import { GEMINI_IMAGE_MODEL, sendChatCompletion } from "@/lib/openrouter";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const ENHANCEMENT_PROMPT = `Enhance this real estate property photo for a premium listing walkthrough.
@@ -8,54 +8,43 @@ Do NOT add, remove, or alter any structural elements, furniture, flooring, walls
 Return only the enhanced image — no text overlays or watermarks.`;
 
 export class OpenRouterImageService {
-  private get apiKey() {
-    return requireServerKey("OPENROUTER_API_KEY", "OpenRouter");
-  }
-
   private get imageModel() {
-    return process.env.OPENROUTER_IMAGE_MODEL ?? "google/gemini-2.5-flash-image-preview";
+    return process.env.OPENROUTER_IMAGE_MODEL ?? GEMINI_IMAGE_MODEL;
   }
 
   async enhanceImage(imageUrl: string, customPrompt?: string): Promise<{ dataUrl: string; model: string; prompt: string }> {
     const prompt = customPrompt ?? ENHANCEMENT_PROMPT;
 
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-        "X-Title": "RealSite Cinematic Walkthrough",
-      },
-      body: JSON.stringify({
-        model: this.imageModel,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              { type: "image_url", image_url: { url: imageUrl } },
-            ],
-          },
-        ],
-        modalities: ["image", "text"],
-      }),
+    const result = await sendChatCompletion({
+      model: this.imageModel,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", imageUrl: { url: imageUrl } },
+          ],
+        },
+      ],
+      modalities: ["image", "text"],
     });
 
-    if (!res.ok) {
-      throw new Error(`OpenRouter image enhancement failed: ${res.status} ${await res.text()}`);
-    }
+    const message = result.choices?.[0]?.message as {
+      images?: { imageUrl?: { url?: string }; image_url?: { url?: string } }[];
+      content?: { type?: string; image_url?: { url?: string } }[] | string;
+    };
 
-    const json = await res.json();
-    const message = json.choices?.[0]?.message;
-    const images = message?.images ?? message?.content?.filter?.((c: { type?: string }) => c.type === "image_url");
+    const images = message?.images ?? (Array.isArray(message?.content)
+      ? message.content.filter((c) => c.type === "image_url")
+      : undefined);
 
     let dataUrl: string | undefined;
     if (Array.isArray(message?.images) && message.images[0]) {
-      dataUrl = message.images[0].image_url?.url ?? message.images[0].imageUrl?.url;
+      dataUrl = message.images[0].imageUrl?.url ?? message.images[0].image_url?.url;
     }
     if (!dataUrl && Array.isArray(images) && images[0]) {
-      dataUrl = images[0].image_url?.url;
+      const first = images[0] as { image_url?: { url?: string }; imageUrl?: { url?: string } };
+      dataUrl = first.image_url?.url ?? first.imageUrl?.url;
     }
 
     if (!dataUrl) {

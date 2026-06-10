@@ -1,4 +1,5 @@
-import { requireServerKey } from "@/lib/env";
+import { GEMINI_35_FLASH_MODEL, sendChatCompletion, streamChatCompletion } from "@/lib/openrouter";
+import type { ChatResult } from "@openrouter/sdk/models";
 import type { RAGContext } from "@/types/domain";
 
 const SENSITIVE_TOPICS = [
@@ -12,36 +13,38 @@ If context is insufficient, respond: "I do not have that exact information in th
 Keep answers concise and helpful. If buyer asks to navigate, respond with JSON navigation intent in format: {"navigate":"room_id_or_checkpoint_id"}.`;
 
 export class OpenRouterService {
-  private get apiKey() {
-    return requireServerKey("OPENROUTER_API_KEY", "OpenRouter");
-  }
-
   private get model() {
-    return process.env.OPENROUTER_PRIMARY_MODEL ?? "google/gemini-2.5-flash-preview";
+    return process.env.OPENROUTER_PRIMARY_MODEL ?? GEMINI_35_FLASH_MODEL;
   }
 
   async chat(params: {
     messages: { role: "system" | "user" | "assistant"; content: string }[];
     temperature?: number;
+    stream?: false;
+  }): Promise<ChatResult>;
+  async chat(params: {
+    messages: { role: "system" | "user" | "assistant"; content: string }[];
+    temperature?: number;
+    stream: true;
+  }): ReturnType<typeof streamChatCompletion>;
+  async chat(params: {
+    messages: { role: "system" | "user" | "assistant"; content: string }[];
+    temperature?: number;
     stream?: boolean;
   }) {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-        "X-Title": "Spatial Sales Platform",
-      },
-      body: JSON.stringify({
+    if (params.stream) {
+      return streamChatCompletion({
         model: this.model,
         messages: params.messages,
         temperature: params.temperature ?? 0.15,
-        stream: params.stream ?? false,
-      }),
+      });
+    }
+
+    return sendChatCompletion({
+      model: this.model,
+      messages: params.messages,
+      temperature: params.temperature ?? 0.15,
     });
-    if (!res.ok) throw new Error(`OpenRouter error: ${res.status} ${await res.text()}`);
-    return res.json();
   }
 
   buildGroundedMessages(query: string, contexts: RAGContext[], sceneContext?: string) {

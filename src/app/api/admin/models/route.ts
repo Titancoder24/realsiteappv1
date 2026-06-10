@@ -7,9 +7,11 @@ export async function GET() {
     return NextResponse.json({
       openrouter: {
         primary: env.server.OPENROUTER_PRIMARY_MODEL,
-        fallback: "google/gemini-2.0-flash-001",
+        planner: env.server.OPENROUTER_PLANNER_MODEL,
+        image: env.server.OPENROUTER_IMAGE_MODEL,
+        fallback: "google/gemini-3.5-flash",
         premium: "anthropic/claude-sonnet-4",
-        lowCost: "google/gemini-2.0-flash-001",
+        lowCost: "google/gemini-3.5-flash",
       },
       elevenlabs: {
         voiceId: env.server.ELEVENLABS_VOICE_ID,
