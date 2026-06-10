@@ -14,14 +14,16 @@ function BuilderContent() {
   const experienceId = params.get("id") ?? "00000000-0000-0000-0000-000000000001";
   const propertyId = params.get("propertyId") ?? "00000000-0000-0000-0000-000000000002";
 
+  if (type === "scene_intelligence") {
+    return <SceneIntelligenceBuilder experienceId={experienceId} propertyId={propertyId} />;
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Experience Builder</h1>
         <p className="text-muted-foreground">
-          {type === "scene_intelligence"
-            ? "Scene Intelligence Builder"
-            : type === "worldlabs_splat"
+          {type === "worldlabs_splat"
             ? "Generate 3D Walkthrough"
             : type === "immersive_world"
               ? "Immersive World"
@@ -30,9 +32,7 @@ function BuilderContent() {
                 : "360° Realistic Experience"}
         </p>
       </div>
-      {type === "scene_intelligence" ? (
-        <SceneIntelligenceBuilder experienceId={experienceId} propertyId={propertyId} />
-      ) : type === "worldlabs_splat" ? (
+      {type === "worldlabs_splat" ? (
         <WorldLabsBuilder experienceId={experienceId} propertyId={propertyId} />
       ) : type === "immersive_world" ? (
         <ImmersiveWorldBuilder experienceId={experienceId} propertyId={propertyId} />

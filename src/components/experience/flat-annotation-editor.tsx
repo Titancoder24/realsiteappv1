@@ -1,11 +1,6 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { ANNOTATION_CATEGORIES, type PropertyScene, type SceneAnnotationRecord } from "@/types/scene-intelligence";
 import { MapPin, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -14,15 +9,22 @@ export function FlatAnnotationEditor({
   scene,
   annotations,
   onAnnotationsChange,
+  variant = "default",
+  canvasOnly = false,
+  inspectorOnly = false,
 }: {
   scene: PropertyScene;
   annotations: SceneAnnotationRecord[];
   onAnnotationsChange: (next: SceneAnnotationRecord[]) => void;
+  variant?: "default" | "studio";
+  canvasOnly?: boolean;
+  inspectorOnly?: boolean;
 }) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [placing, setPlacing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const isStudio = variant === "studio";
 
   const selected = annotations.find((a) => a.id === selectedId) ?? null;
   const imageUrl = scene.edited_image_url || scene.image_url;
@@ -50,7 +52,7 @@ export function FlatAnnotationEditor({
       onAnnotationsChange([...annotations, draft]);
       setSelectedId(id);
       setPlacing(false);
-      toast.success("Pin placed — add details below");
+      toast.success("Pin placed");
     },
     [placing, scene, annotations, onAnnotationsChange],
   );
@@ -77,7 +79,7 @@ export function FlatAnnotationEditor({
     const saved = await res.json();
     onAnnotationsChange(annotations.map((a) => (a.id === selected.id ? saved : a)));
     setSelectedId(saved.id);
-    toast.success("Annotation saved to RAG");
+    toast.success("Saved to knowledge base");
   }
 
   async function deleteSelected() {
@@ -90,95 +92,157 @@ export function FlatAnnotationEditor({
     if (!res.ok) return toast.error("Failed to delete");
     onAnnotationsChange(annotations.filter((a) => a.id !== selected.id));
     setSelectedId(null);
-    toast.success("Annotation removed");
+    toast.success("Pin removed");
+  }
+
+  const canvas = (
+    <div
+      ref={canvasRef}
+      className={
+        isStudio
+          ? "studio-canvas-frame studio-canvas-zone relative inline-block"
+          : `relative aspect-video overflow-hidden rounded-xl bg-black ${placing ? "ring-2 ring-primary" : ""}`
+      }
+      data-placing={placing}
+      onClick={handleCanvasClick}
+    >
+      {isStudio && <span className="studio-canvas-badge">Pin mode · {scene.title}</span>}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={imageUrl} alt={scene.title} className={isStudio ? "" : "h-full w-full object-cover"} draggable={false} />
+      {annotations.map((ann) => (
+        <button
+          key={ann.id}
+          type="button"
+          className={isStudio ? "studio-pin" : "absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white/90 p-1 shadow-lg"}
+          data-selected={selectedId === ann.id}
+          style={{ left: `${ann.x_position * 100}%`, top: `${ann.y_position * 100}%` }}
+          onClick={(e) => { e.stopPropagation(); setSelectedId(ann.id); setPlacing(false); }}
+        >
+          <MapPin className={isStudio ? "" : "h-4 w-4 text-primary"} />
+        </button>
+      ))}
+    </div>
+  );
+
+  const toolbar = isStudio && !inspectorOnly && (
+    <div className="absolute top-4 right-4 z-20">
+      <button
+        type="button"
+        className={placing ? "studio-btn-primary" : "studio-btn-ghost bg-white/95 backdrop-blur"}
+        onClick={() => setPlacing((p) => !p)}
+      >
+        <Plus className="inline h-3.5 w-3.5 mr-1" />
+        {placing ? "Click object…" : "Add pin"}
+      </button>
+    </div>
+  );
+
+  const inspector = (
+    <div className={isStudio ? "studio-panel-body space-y-3" : "flex flex-col gap-3 overflow-y-auto"}>
+      {isStudio && (
+        <div className="studio-panel-header -mx-[0.625rem] -mt-[0.625rem] mb-2 flex items-center justify-between">
+          <h3>Pin details</h3>
+          {!inspectorOnly && (
+            <button type="button" className={placing ? "studio-btn-primary text-[0.6875rem] py-1 px-2" : "studio-btn-ghost text-[0.6875rem] py-1 px-2"} onClick={() => setPlacing((p) => !p)}>
+              <Plus className="inline h-3 w-3 mr-0.5" />
+              {placing ? "Placing…" : "Add"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {selected ? (
+        <>
+          <div>
+            <label className={isStudio ? "studio-field-label" : "text-sm font-medium"}>Title</label>
+            <input className={isStudio ? "studio-input" : "w-full rounded-md border px-3 py-2 text-sm"} value={selected.title} onChange={(e) => updateSelected({ title: e.target.value })} />
+          </div>
+          <div>
+            <label className={isStudio ? "studio-field-label" : "text-sm font-medium"}>Short description</label>
+            <input className={isStudio ? "studio-input" : "w-full rounded-md border px-3 py-2 text-sm"} value={selected.short_description ?? ""} onChange={(e) => updateSelected({ short_description: e.target.value })} />
+          </div>
+          <div>
+            <label className={isStudio ? "studio-field-label" : "text-sm font-medium"}>Details</label>
+            <textarea className={isStudio ? "studio-input studio-textarea" : "w-full rounded-md border px-3 py-2 text-sm"} value={selected.description ?? ""} onChange={(e) => updateSelected({ description: e.target.value })} rows={3} />
+          </div>
+          <div>
+            <label className={isStudio ? "studio-field-label" : "text-sm font-medium"}>Category</label>
+            <select
+              className={isStudio ? "studio-input" : "w-full rounded-md border px-3 py-2 text-sm"}
+              value={selected.category}
+              onChange={(e) => updateSelected({ category: e.target.value as SceneAnnotationRecord["category"] })}
+            >
+              {ANNOTATION_CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-[0.75rem] text-[var(--studio-muted,#71717a)]">
+            <input type="checkbox" checked={selected.rag_enabled} onChange={(e) => updateSelected({ rag_enabled: e.target.checked })} />
+            Include in AI knowledge
+          </label>
+          <label className="flex items-center gap-2 text-[0.75rem] text-[var(--studio-muted,#71717a)]">
+            <input type="checkbox" checked={selected.visibility === "public"} onChange={(e) => updateSelected({ visibility: e.target.checked ? "public" : "internal" })} />
+            Visible to buyers
+          </label>
+          <div className="flex gap-2 pt-1">
+            <button type="button" className={isStudio ? "studio-btn-primary flex-1" : "flex-1 rounded-md bg-primary px-3 py-2 text-sm text-white"} onClick={saveSelected} disabled={saving}>
+              {saving ? "Saving…" : "Save pin"}
+            </button>
+            <button type="button" className="studio-btn-ghost px-2" onClick={deleteSelected} aria-label="Delete pin">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="text-[0.75rem] text-[var(--studio-muted,#71717a)]">
+          <p className="mb-3">Select a pin or add one on the canvas.</p>
+          <div className="space-y-1">
+            {annotations.map((a) => (
+              <button key={a.id} type="button" className="studio-scene-item w-full" data-active={false} onClick={() => setSelectedId(a.id)}>
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-[var(--studio-accent,#0d99ff)]" />
+                <div className="studio-scene-meta">
+                  <strong>{a.title}</strong>
+                  {!a.created_at && <small>Draft</small>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  if (canvasOnly) {
+    return (
+      <div className="relative">
+        {toolbar}
+        {canvas}
+      </div>
+    );
+  }
+  if (inspectorOnly) return <div className="studio-panel flex flex-col min-h-0">{inspector}</div>;
+
+  if (isStudio) {
+    return (
+      <div className="grid flex-1 gap-4 overflow-hidden lg:grid-cols-[1fr_280px]">
+        <div className="relative">{toolbar}{canvas}</div>
+        {inspector}
+      </div>
+    );
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden rounded-xl border bg-background">
       <div className="flex items-center justify-between border-b px-4 py-2">
         <p className="text-sm font-medium">Object pins — {scene.title}</p>
-        <Button size="sm" variant={placing ? "default" : "outline"} onClick={() => setPlacing((p) => !p)}>
-          <Plus className="mr-1 h-4 w-4" />
-          {placing ? "Tap object on image…" : "Add pin"}
-        </Button>
+        <button type="button" className="text-sm underline" onClick={() => setPlacing((p) => !p)}>
+          {placing ? "Tap object…" : "Add pin"}
+        </button>
       </div>
-
-      <div className="grid flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[1fr_280px]">
-        <div
-          ref={canvasRef}
-          className={`relative aspect-video cursor-crosshair overflow-hidden rounded-xl bg-black ${placing ? "ring-2 ring-primary" : ""}`}
-          onClick={handleCanvasClick}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imageUrl} alt={scene.title} className="h-full w-full object-cover" draggable={false} />
-          {annotations.map((ann) => (
-            <button
-              key={ann.id}
-              type="button"
-              className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white/90 p-1 shadow-lg transition-transform hover:scale-110 ${selectedId === ann.id ? "border-primary ring-2 ring-primary" : "border-white"}`}
-              style={{ left: `${ann.x_position * 100}%`, top: `${ann.y_position * 100}%` }}
-              onClick={(e) => { e.stopPropagation(); setSelectedId(ann.id); setPlacing(false); }}
-            >
-              <MapPin className="h-4 w-4 text-primary" />
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-3 overflow-y-auto">
-          {selected ? (
-            <>
-              <div>
-                <Label>What is this?</Label>
-                <Input value={selected.title} onChange={(e) => updateSelected({ title: e.target.value })} />
-              </div>
-              <div>
-                <Label>Short description</Label>
-                <Input value={selected.short_description ?? ""} onChange={(e) => updateSelected({ short_description: e.target.value })} />
-              </div>
-              <div>
-                <Label>Detailed description</Label>
-                <Textarea value={selected.description ?? ""} onChange={(e) => updateSelected({ description: e.target.value })} rows={3} />
-              </div>
-              <div>
-                <Label>Category</Label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  value={selected.category}
-                  onChange={(e) => updateSelected({ category: e.target.value as SceneAnnotationRecord["category"] })}
-                >
-                  {ANNOTATION_CATEGORIES.map((c) => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
-                  ))}
-                </select>
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={selected.rag_enabled} onChange={(e) => updateSelected({ rag_enabled: e.target.checked })} />
-                Should AI know this?
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={selected.visibility === "public"} onChange={(e) => updateSelected({ visibility: e.target.checked ? "public" : "internal" })} />
-                Should buyers see this?
-              </label>
-              <div className="flex gap-2">
-                <Button className="flex-1" onClick={saveSelected} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
-                <Button variant="destructive" size="icon" onClick={deleteSelected}><Trash2 className="h-4 w-4" /></Button>
-              </div>
-            </>
-          ) : (
-            <div className="text-sm text-muted-foreground">
-              <p>Select a pin or tap <strong>Add pin</strong> then click an object in the scene.</p>
-              <div className="mt-3 space-y-1">
-                {annotations.map((a) => (
-                  <button key={a.id} type="button" className="flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left hover:bg-muted" onClick={() => setSelectedId(a.id)}>
-                    <MapPin className="h-3 w-3 text-primary" />
-                    <span className="truncate">{a.title}</span>
-                    {!a.created_at && <Badge variant="outline" className="text-[10px]">Draft</Badge>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+      <div className="grid flex-1 gap-4 p-4 lg:grid-cols-[1fr_280px]">
+        {canvas}
+        {inspector}
       </div>
     </div>
   );

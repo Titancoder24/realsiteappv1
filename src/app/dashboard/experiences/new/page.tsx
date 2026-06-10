@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExperienceTypeSelector } from "@/components/experience/experience-type-selector";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import "@/styles/scene-studio.css";
 import type { ExperienceType } from "@/types/domain";
 import { toast } from "sonner";
 
@@ -45,24 +44,27 @@ export default function NewExperiencePage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6 experience-picker">
       <div>
-        <h1 className="text-2xl font-semibold">Create Experience</h1>
-        <p className="text-muted-foreground">Choose property and creation engine</p>
+        <h1 className="text-xl font-semibold tracking-tight">Create experience</h1>
+        <p className="mt-1 text-sm text-[#71717a]">Select a property, then choose how buyers will explore the listing.</p>
       </div>
-      <Card>
-        <CardHeader><CardTitle className="text-base">Property</CardTitle></CardHeader>
-        <CardContent>
-          <select className="w-full rounded-md border px-3 py-2 text-sm" value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
-            <option value="">Select property</option>
-            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </CardContent>
-      </Card>
+      <div className="picker-card p-4">
+        <label className="picker-section-label">Property</label>
+        <select className="studio-input mt-1" value={propertyId} onChange={(e) => setPropertyId(e.target.value)}>
+          <option value="">Select property</option>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
       <ExperienceTypeSelector selected={selected} onSelect={setSelected} />
-      <Button disabled={!selected || !propertyId || creating} onClick={create}>
-        {creating ? "Creating…" : "Continue to Builder"}
-      </Button>
+      <button
+        type="button"
+        className="studio-btn-primary px-5 py-2.5 disabled:opacity-40"
+        disabled={!selected || !propertyId || creating}
+        onClick={create}
+      >
+        {creating ? "Creating…" : "Continue to builder"}
+      </button>
     </div>
   );
 }

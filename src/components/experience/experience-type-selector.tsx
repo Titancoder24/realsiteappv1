@@ -1,16 +1,16 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Camera, Box, Smartphone, Sparkles, Clapperboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ExperienceType } from "@/types/domain";
+import "@/styles/scene-studio.css";
 
 type ExperienceOption = {
   type: ExperienceType;
   title: string;
   description: string;
   badge: string;
+  badgeVariant?: "default" | "new";
   icon: typeof Camera;
   steps: string;
 };
@@ -18,48 +18,49 @@ type ExperienceOption = {
 const walkthroughOptions: ExperienceOption[] = [
   {
     type: "mobile_360_capture",
-    title: "Mobile 360° Capture Walkthrough",
-    description: "Walk through the property with your phone. Guided room-by-room capture — no 360 camera needed.",
-    badge: "Mobile-first",
+    title: "Mobile 360° Capture",
+    description: "Guided room-by-room capture with your phone. No 360 camera required.",
+    badge: "Mobile",
     icon: Smartphone,
-    steps: "Choose rooms → capture with phone → connect → publish",
+    steps: "Rooms → capture → connect → publish",
   },
   {
     type: "360_realistic",
-    title: "360° Realistic Experience",
-    description: "Upload existing panoramas and room images. Best when you already have 360° photos.",
+    title: "360° Panorama Tour",
+    description: "Upload existing 360° panoramas and connect rooms with spatial annotations.",
     badge: "Upload",
     icon: Camera,
-    steps: "Upload panoramas → create rooms → add hotspots → publish",
+    steps: "Panoramas → rooms → hotspots → publish",
   },
   {
     type: "worldlabs_splat",
-    title: "Generate 3D Walkthrough",
-    description: "World Labs pipeline — multi-image 3D world generation with marble viewer assets.",
+    title: "3D Walkthrough",
+    description: "Generate an explorable 3D world from multiple listing photos via World Labs.",
     badge: "World Labs",
     icon: Box,
-    steps: "Upload media → generate 3D world → review → publish",
+    steps: "Media → generate → review → publish",
   },
   {
     type: "immersive_world",
     title: "Immersive World",
-    description: "Turn a single property photo into an explorable 3D environment. Fast Echo generation from image.",
+    description: "Single-photo to explorable 3D environment. Fast Echo generation pipeline.",
     badge: "Echo 3D",
     icon: Sparkles,
-    steps: "Upload photo → generate 3D world → annotate → publish",
+    steps: "Photo → 3D world → annotate → publish",
   },
 ];
 
 const sceneIntelligenceOption: ExperienceOption = {
   type: "scene_intelligence",
   title: "Scene Intelligence Builder",
-  description: "Upload listing photos, add cinematic motion, pin objects, and publish an interactive property viewer with AI knowledge.",
-  badge: "New",
+  description: "Turn listing photos into cinematic motion scenes with object pins, AI knowledge, and an interactive buyer viewer.",
+  badge: "Studio",
+  badgeVariant: "new",
   icon: Clapperboard,
-  steps: "Upload images → edit → motion → annotate → publish viewer",
+  steps: "Images → edit → motion → pins → publish",
 };
 
-function ExperienceCard({
+function PickerCard({
   opt,
   active,
   onSelect,
@@ -73,25 +74,22 @@ function ExperienceCard({
   const Icon = opt.icon;
   return (
     <button type="button" onClick={() => onSelect(opt.type)} className="w-full text-left">
-      <Card
-        className={cn(
-          "cursor-pointer transition-all hover:border-primary/50",
-          active && "border-primary ring-2 ring-primary/20",
-          featured && "border-dashed bg-muted/20",
-        )}
+      <div
+        className={cn("picker-card", featured && "picker-card-featured")}
+        data-active={active}
       >
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <Icon className="h-8 w-8 text-primary" />
-            <Badge>{opt.badge}</Badge>
+        <div className="flex items-start justify-between gap-3">
+          <div className="picker-icon">
+            <Icon className="h-5 w-5" />
           </div>
-          <CardTitle className="mt-4">{opt.title}</CardTitle>
-          <CardDescription>{opt.description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted-foreground">{opt.steps}</p>
-        </CardContent>
-      </Card>
+          <span className={cn("picker-badge", opt.badgeVariant === "new" && "picker-badge-new")}>
+            {opt.badge}
+          </span>
+        </div>
+        <p className="picker-title">{opt.title}</p>
+        <p className="picker-desc">{opt.description}</p>
+        <p className="picker-steps">{opt.steps}</p>
+      </div>
     </button>
   );
 }
@@ -104,19 +102,19 @@ export function ExperienceTypeSelector({
   onSelect: (type: ExperienceType) => void;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="experience-picker space-y-6">
       <div>
-        <p className="mb-3 text-sm font-medium text-muted-foreground">Virtual tour engines</p>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <p className="picker-section-label">Virtual tour engines</p>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {walkthroughOptions.map((opt) => (
-            <ExperienceCard key={opt.type} opt={opt} active={selected === opt.type} onSelect={onSelect} />
+            <PickerCard key={opt.type} opt={opt} active={selected === opt.type} onSelect={onSelect} />
           ))}
         </div>
       </div>
 
       <div>
-        <p className="mb-3 text-sm font-medium text-muted-foreground">Interactive listing viewer</p>
-        <ExperienceCard
+        <p className="picker-section-label">Interactive listing viewer</p>
+        <PickerCard
           opt={sceneIntelligenceOption}
           active={selected === sceneIntelligenceOption.type}
           onSelect={onSelect}
