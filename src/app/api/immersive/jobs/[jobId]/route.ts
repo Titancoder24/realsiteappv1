@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { withAuth, jsonError } from "@/lib/api-utils";
 import { spatialGenerationService } from "@/services/spatial-generation.service";
+import { spaitialService } from "@/services/spaitial.service";
 
 const LABELS: Record<string, string> = {
   worldlabs_generation_requested: "Queued for generation",
@@ -28,6 +29,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ jobId: 
       if (refreshed) Object.assign(job, refreshed);
     }
 
+    let progress: number | null = null;
+    if (job.operation_id && (job.status === "worldlabs_processing" || job.status === "worldlabs_generation_requested")) {
+      try {
+        const poll = await spaitialService.getStatus(job.operation_id as string);
+        progress = poll.progress ?? null;
+      } catch {
+        // ignore poll errors during status fetch
+      }
+    }
+
     return NextResponse.json({
       id: job.id,
       status: job.status,
@@ -37,6 +48,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ jobId: 
       errorMessage: job.error_message,
       retryCount: job.retry_count,
       provider: job.provider ?? "spaitial",
+      startedAt: job.started_at ?? job.created_at,
+      progress,
     });
   }, "project_manager");
 }

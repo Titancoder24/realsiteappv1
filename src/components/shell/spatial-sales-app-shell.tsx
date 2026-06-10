@@ -23,9 +23,7 @@ export function SpatialSalesAppShell({ children }: { children: React.ReactNode }
   const visibleGroups = getVisibleNavGroups(role);
   const { themeId, mode, ready } = useSidebarTheme();
 
-  const isFullscreenRoute =
-    pathname.includes("/dashboard/capture/") ||
-    pathname.includes("/dashboard/experiences/builder");
+  const isFullscreenRoute = pathname.includes("/dashboard/capture/");
 
   return (
     <SidebarProvider defaultOpen={false}>
