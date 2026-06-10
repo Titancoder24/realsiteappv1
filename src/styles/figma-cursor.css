@@ -14,31 +14,46 @@ body.figma-cursor-active * {
   pointer-events: none;
   z-index: 99999;
   will-change: transform;
+  /* No transition on transform/opacity — position must track the pointer 1:1 */
+  contain: layout style;
 }
 
 .figma-cursor-svg {
+  display: none;
   width: 28px;
   height: 28px;
   filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
-  transition: width 0.1s, height 0.1s;
 }
 
-.figma-cursor-layer[data-mode="pointer"] .figma-cursor-svg {
-  width: 26px;
-  height: 26px;
+/* Show exactly one variant based on layer mode — no React re-render needed */
+.figma-cursor-layer[data-mode="default"] .figma-cursor-svg[data-cursor-mode="default"],
+.figma-cursor-layer[data-mode="pointer"] .figma-cursor-svg[data-cursor-mode="pointer"],
+.figma-cursor-layer[data-mode="crosshair"] .figma-cursor-svg[data-cursor-mode="crosshair"],
+.figma-cursor-layer[data-mode="text"] .figma-cursor-svg[data-cursor-mode="text"] {
+  display: block;
 }
 
 .figma-cursor-layer[data-mode="crosshair"] .figma-cursor-svg {
   width: 32px;
   height: 32px;
+  margin-left: -16px;
+  margin-top: -16px;
 }
 
 .figma-cursor-layer[data-mode="text"] .figma-cursor-svg {
   width: 22px;
   height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
 }
 
-/* Fallback CSS cursors when overlay disabled (touch devices) */
+/* Subtle press feedback */
+.figma-cursor-layer.figma-cursor-down .figma-cursor-svg {
+  transform: scale(0.88);
+  transform-origin: 6px 5px;
+}
+
+/* Fallback when overlay disabled (touch devices) */
 @media (pointer: coarse) {
   body.figma-cursor-active,
   body.figma-cursor-active * {
