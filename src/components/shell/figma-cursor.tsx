@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 
 type CursorMode = "default" | "pointer" | "crosshair" | "text";
 
+const CURSOR_ROOT_ID = "figma-cursor-root";
+
 const INTERACTIVE_SELECTOR =
   "[data-cursor='crosshair'], button, a, [role='button'], label, input, textarea, select, [contenteditable='true'], .studio-clickable, .picker-card, .picker-next";
 
@@ -17,6 +19,20 @@ function resolveMode(target: EventTarget | null): CursorMode {
   return "pointer";
 }
 
+function ensureCursorRoot(): HTMLElement {
+  let root = document.getElementById(CURSOR_ROOT_ID);
+  if (!root) {
+    root = document.createElement("div");
+    root.id = CURSOR_ROOT_ID;
+    document.documentElement.appendChild(root);
+  } else if (root.parentElement !== document.documentElement) {
+    document.documentElement.appendChild(root);
+  } else {
+    document.documentElement.appendChild(root);
+  }
+  return root;
+}
+
 /**
  * Performance notes:
  * - Position updates write `style.transform` directly on the DOM node from the
@@ -25,18 +41,20 @@ function resolveMode(target: EventTarget | null): CursorMode {
  *   changes), instead of an `elementFromPoint` hit-test on every move.
  * - All cursor variants are rendered once; CSS `data-mode` toggles visibility,
  *   so changing mode never re-renders React either.
+ * - Cursor renders inside a full-viewport root appended to <html> so it is
+ *   never clipped by sidebar/button overflow or parent stacking contexts.
  */
 export function FigmaCursor() {
-  const [mounted, setMounted] = useState(false);
+  const [root, setRoot] = useState<HTMLElement | null>(null);
   const layerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (window.matchMedia("(pointer: coarse)").matches) return;
-    setMounted(true);
+    setRoot(ensureCursorRoot());
   }, []);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!root) return;
     const layer = layerRef.current;
     if (!layer) return;
 
@@ -73,9 +91,9 @@ export function FigmaCursor() {
       window.removeEventListener("pointerup", onUp);
       document.documentElement.removeEventListener("pointerleave", onLeave);
     };
-  }, [mounted]);
+  }, [root]);
 
-  if (!mounted) return null;
+  if (!root) return null;
 
   return createPortal(
     <div ref={layerRef} className="figma-cursor-layer" data-mode="default" style={{ opacity: 0 }}>
@@ -116,6 +134,6 @@ export function FigmaCursor() {
         <path d="M12 3v18M8 3h8M8 21h8" stroke="#fff" strokeWidth="0.75" strokeLinecap="round" />
       </svg>
     </div>,
-    document.body,
+    root,
   );
 }

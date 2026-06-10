@@ -1,27 +1,42 @@
-/* Global Figma-style cursor — large visible pointer overlay */
+/* Global Figma-style cursor — full-viewport overlay, always on top */
 
 body.figma-cursor-active,
 body.figma-cursor-active * {
   cursor: none !important;
 }
 
-.figma-cursor-layer {
+/* Full-screen root on <html> — prevents clipping by sidebar/button overflow */
+#figma-cursor-root {
   position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 2147483647;
+  overflow: visible;
+  isolation: isolate;
+}
+
+.figma-cursor-layer {
+  position: absolute;
   top: 0;
   left: 0;
   width: 0;
   height: 0;
+  overflow: visible;
   pointer-events: none;
-  z-index: 2147483647;
   will-change: transform;
-  /* No transition on transform/opacity — position must track the pointer 1:1 */
-  contain: layout style;
+  /* No contain — it was clipping the SVG outside the 0×0 anchor box */
 }
 
 .figma-cursor-svg {
   display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 30px;
   height: 30px;
+  overflow: visible;
   filter: drop-shadow(0 1.5px 3px rgb(0 0 0 / 0.35));
 }
 
@@ -30,6 +45,12 @@ body.figma-cursor-active * {
   width: 42px;
   height: 42px;
   transform-origin: 5px 3px;
+}
+
+.figma-cursor-layer[data-mode="pointer"] .figma-cursor-svg[data-cursor-mode="pointer"] {
+  width: 36px;
+  height: 36px;
+  transform-origin: 6px 4px;
 }
 
 /* Show exactly one variant based on layer mode — no React re-render needed */
@@ -65,13 +86,19 @@ body.figma-cursor-active * {
   transform-origin: 5px 3px;
 }
 
+.figma-cursor-layer[data-mode="pointer"].figma-cursor-down .figma-cursor-svg[data-cursor-mode="pointer"] {
+  transform: scale(0.9);
+  transform-origin: 6px 4px;
+}
+
 /* Fallback when overlay disabled (touch devices) */
 @media (pointer: coarse) {
   body.figma-cursor-active,
   body.figma-cursor-active * {
     cursor: auto !important;
   }
-  .figma-cursor-layer {
+
+  #figma-cursor-root {
     display: none;
   }
 }
