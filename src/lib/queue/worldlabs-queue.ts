@@ -23,7 +23,7 @@ export async function enqueueWorldLabsJob(jobId: string) {
     await queue.add("process", { jobId }, { attempts: 3, backoff: { type: "exponential", delay: 30000 } });
     return "bullmq";
   }
-  spatialGenerationService.processWorldLabsJob(jobId).catch(console.error);
+  spatialGenerationService.processSpatialJob(jobId).catch(console.error);
   return "inline";
 }
 
@@ -36,7 +36,7 @@ export function startWorldLabsWorker() {
   new Worker(
     QUEUE_NAME,
     async (job) => {
-      await spatialGenerationService.processWorldLabsJob(job.data.jobId);
+      await spatialGenerationService.processSpatialJob(job.data.jobId);
     },
     { connection },
   );

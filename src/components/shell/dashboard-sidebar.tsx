@@ -57,13 +57,13 @@ export function DashboardSidebar({
   role: UserRole;
 }) {
   const pathname = usePathname();
-  const { themeId, setThemeId, ready } = useSidebarTheme();
+  const { themeId, setThemeId, mode, setMode, ready } = useSidebarTheme();
 
   return (
     <Sidebar
       collapsible="offcanvas"
-      className="border-r border-sidebar-border"
-      style={ready ? themeStyleVars(themeId) : undefined}
+      className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
+      style={ready ? themeStyleVars(themeId, mode) : undefined}
     >
       <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
         <Link href="/dashboard" className="flex items-center gap-3">
@@ -101,7 +101,7 @@ export function DashboardSidebar({
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border">
-        <SidebarThemePicker value={themeId} onChange={setThemeId} />
+        <SidebarThemePicker value={themeId} mode={mode} onChange={setThemeId} onModeChange={setMode} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

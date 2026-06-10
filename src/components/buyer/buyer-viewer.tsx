@@ -19,7 +19,7 @@ import { SplatViewer } from "@/components/buyer/splat-viewer";
 import { FamilySessionPanel } from "@/components/buyer/family-session-panel";
 import { CheckpointOverlay, type Checkpoint } from "@/components/buyer/checkpoint-overlay";
 import { Map, Mic, MessageSquare, Phone, Users } from "lucide-react";
-import type { ExperienceType } from "@/types/domain";
+import { isSplatExperience, type ExperienceType } from "@/types/domain";
 
 interface BuyerData {
   id: string;
@@ -124,7 +124,7 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
   useEffect(() => {
     if (!sessionId || !data) return;
     const interval = setInterval(() => {
-      if (data.type === "worldlabs_splat") {
+      if (isSplatExperience(data.type)) {
         track("gaze_sample", { position3d }, { x: position3d.x, y: position3d.y, z: position3d.z, dwellSeconds: 2 });
       } else if (currentSceneId) {
         track("gaze_sample", { gaze, sceneId: currentSceneId }, { sceneId: currentSceneId, x: gaze.yaw, y: gaze.pitch, dwellSeconds: 2 });
@@ -179,7 +179,7 @@ export function BuyerViewer({ slug, utm }: { slug: string; utm?: Record<string, 
   return (
     <div className="relative h-screen w-full bg-black text-white">
       <div className="absolute inset-0">
-        {data.type === "worldlabs_splat" ? (
+        {isSplatExperience(data.type) ? (
           <SplatViewer
             spz100kUrl={splat?.spz_100k_url}
             spz500kUrl={splat?.spz_500k_url}

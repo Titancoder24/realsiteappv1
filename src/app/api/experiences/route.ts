@@ -5,7 +5,7 @@ import { withAuth, jsonError, slugify } from "@/lib/api-utils";
 
 const schema = z.object({
   property_id: z.string().uuid(),
-  type: z.enum(["360_realistic", "worldlabs_splat", "future_inhouse_splat", "mobile_360_capture"]),
+  type: z.enum(["360_realistic", "worldlabs_splat", "immersive_world", "mobile_360_capture"]),
   primary_experience: z.boolean().optional(),
 });
 

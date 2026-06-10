@@ -21,7 +21,7 @@ export function SpatialSalesAppShell({ children }: { children: React.ReactNode }
   const pathname = usePathname();
   const { role } = useUserRole();
   const visibleGroups = getVisibleNavGroups(role);
-  const { themeId, ready } = useSidebarTheme();
+  const { themeId, mode, ready } = useSidebarTheme();
 
   const isFullscreenRoute =
     pathname.includes("/dashboard/capture/") ||
@@ -29,7 +29,7 @@ export function SpatialSalesAppShell({ children }: { children: React.ReactNode }
 
   return (
     <SidebarProvider defaultOpen={false}>
-      <div className="flex min-h-svh w-full" style={ready ? themeStyleVars(themeId) : undefined}>
+      <div className="flex min-h-svh w-full" style={ready ? themeStyleVars(themeId, mode) : undefined}>
         <DashboardSidebar groups={visibleGroups} role={role} />
         <SidebarInset className="flex min-h-svh flex-col overflow-x-hidden bg-muted/30">
         {!isFullscreenRoute && (

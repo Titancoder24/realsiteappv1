@@ -20,8 +20,9 @@ export default function ExperiencesPage() {
   }, []);
 
   const published = experiences.filter((e) => e.status === "published").length;
-  const tours360 = experiences.filter((e) => e.type !== "worldlabs_splat").length;
-  const tours3d = experiences.filter((e) => e.type === "worldlabs_splat").length;
+  const is3d = (t: string) => t === "worldlabs_splat" || t === "immersive_world";
+  const tours360 = experiences.filter((e) => !is3d(e.type)).length;
+  const tours3d = experiences.filter((e) => is3d(e.type)).length;
 
   const statusMix = useMemo(() => {
     const draft = experiences.filter((e) => e.status !== "published").length;
@@ -71,11 +72,13 @@ export default function ExperiencesPage() {
             <CardHeader className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3 min-w-0">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  {e.type === "worldlabs_splat" ? <Globe className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
+                  {is3d(e.type) ? <Globe className="h-5 w-5" /> : <Camera className="h-5 w-5" />}
                 </div>
                 <div className="min-w-0">
                   <CardTitle className="text-base truncate">{e.properties?.name ?? "Property"}</CardTitle>
-                  <p className="text-sm text-muted-foreground">{e.type === "worldlabs_splat" ? "3D Walkthrough" : "360° Panorama Tour"}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {e.type === "immersive_world" ? "Immersive World" : is3d(e.type) ? "3D Walkthrough" : "360° Panorama Tour"}
+                  </p>
                 </div>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">

@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ExperienceType, SpatialGenerationInput, SpatialGenerationResult } from "@/types/domain";
 import { worldLabsService } from "./world-labs.service";
+import { spaitialService } from "./spaitial.service";
 
 export interface SpatialEngine {
   type: ExperienceType;
@@ -55,11 +56,36 @@ class WorldLabsEngine implements SpatialEngine {
   }
 }
 
-class FutureInHouseEngine implements SpatialEngine {
-  type: ExperienceType = "future_inhouse_splat";
+/** SpAItial Echo — image → immersive 3D world (branded "Immersive World" in UI). */
+class ImmersiveWorldEngine implements SpatialEngine {
+  type: ExperienceType = "immersive_world";
 
-  async generate(): Promise<SpatialGenerationResult> {
-    throw new Error("In-house splat engine not yet available");
+  async generate(input: SpatialGenerationInput): Promise<SpatialGenerationResult> {
+    const supabase = createAdminClient();
+
+    const { data: job, error } = await supabase
+      .from("worldlabs_jobs")
+      .insert({
+        organization_id: input.organizationId,
+        property_id: input.propertyId,
+        experience_id: input.experienceId,
+        status: "worldlabs_generation_requested",
+        model: input.model ?? "default",
+        provider: "spaitial",
+        input_media_asset_ids: input.mediaAssetIds,
+        world_prompt_payload: { prompt: input.prompt, title: input.prompt },
+      })
+      .select("id")
+      .single();
+
+    if (error) throw error;
+
+    await supabase
+      .from("experiences")
+      .update({ status: "processing", updated_at: new Date().toISOString() })
+      .eq("id", input.experienceId);
+
+    return { engine: this.type, status: "processing", jobId: job.id };
   }
 }
 
@@ -80,7 +106,7 @@ export class SpatialGenerationService {
   private engines: Record<ExperienceType, SpatialEngine> = {
     "360_realistic": new Tour360Engine(),
     worldlabs_splat: new WorldLabsEngine(),
-    future_inhouse_splat: new FutureInHouseEngine(),
+    immersive_world: new ImmersiveWorldEngine(),
     mobile_360_capture: new MobileCaptureEngine(),
   };
 
@@ -155,6 +181,7 @@ export class SpatialGenerationService {
         collider_mesh_url: assets.colliderMeshUrl,
         pano_url: assets.panoUrl,
         model: job.model,
+        provider: "worldlabs",
       });
 
       await updateStatus("ready_for_review", { completed_at: new Date().toISOString() });
@@ -173,6 +200,117 @@ export class SpatialGenerationService {
         .update({ status: "failed", updated_at: new Date().toISOString() })
         .eq("id", job.experience_id);
     }
+  }
+
+  async processImmersiveWorldJob(jobId: string) {
+    const supabase = createAdminClient();
+    const { data: job } = await supabase.from("worldlabs_jobs").select("*").eq("id", jobId).single();
+    if (!job) throw new Error("Job not found");
+
+    const updateStatus = async (status: string, extra?: Record<string, unknown>) => {
+      await supabase.from("worldlabs_jobs").update({ status, ...extra, updated_at: new Date().toISOString() }).eq("id", jobId);
+    };
+
+    try {
+      await updateStatus("worldlabs_processing", { started_at: new Date().toISOString(), provider: "spaitial" });
+
+      const mediaIds = (job.input_media_asset_ids as string[]) ?? [];
+      const promptPayload = (job.world_prompt_payload as { prompt?: string; title?: string }) ?? {};
+      let imageUrl: string | undefined;
+
+      if (mediaIds.length) {
+        const { data: assets } = await supabase.from("media_assets").select("file_url").in("id", mediaIds).limit(1);
+        imageUrl = assets?.[0]?.file_url;
+      }
+
+      if (!imageUrl && !promptPayload.prompt) {
+        throw new Error("Upload a property image to generate an Immersive World.");
+      }
+
+      const title = promptPayload.title ?? promptPayload.prompt ?? "Property immersive world";
+      const { requestId } = imageUrl
+        ? await spaitialService.createWorldFromImageUrl({
+            imageUrl,
+            title,
+            model: job.model ?? "default",
+          })
+        : await spaitialService.createWorldFromText({
+            prompt: promptPayload.prompt!,
+            title,
+            model: job.model ?? "default",
+          });
+
+      await updateStatus("worldlabs_processing", { operation_id: requestId });
+
+      const finalStatus = await spaitialService.pollUntilDone(requestId);
+      if (finalStatus.status === "FAILED" || finalStatus.status === "CANCELLED") {
+        throw new Error(finalStatus.error ?? `Generation ${finalStatus.status}`);
+      }
+
+      const result = await spaitialService.getResult(requestId);
+      let spzPublicUrl = result.splatProxyUrl;
+
+      // Download splat to Supabase so buyer viewer works without API auth
+      try {
+        const signedUrl = await spaitialService.resolveSplatDownloadUrl(requestId);
+        const fileRes = await fetch(signedUrl);
+        if (fileRes.ok) {
+          const buffer = await fileRes.arrayBuffer();
+          const path = `${job.organization_id}/${job.property_id}/immersive/${job.experience_id}-${Date.now()}.spz`;
+          const admin = createAdminClient();
+          await admin.storage.from("media").upload(path, buffer, { contentType: "application/octet-stream", upsert: true });
+          const { data: { publicUrl } } = admin.storage.from("media").getPublicUrl(path);
+          spzPublicUrl = publicUrl;
+        }
+      } catch {
+        // Fall back to proxy URL stored in viewer_url
+      }
+
+      await updateStatus("worldlabs_succeeded", {
+        world_id: result.worldId,
+        raw_world_response: result,
+        completed_at: new Date().toISOString(),
+      });
+
+      await supabase.from("splat_worlds").upsert({
+        property_id: job.property_id,
+        experience_id: job.experience_id,
+        worldlabs_job_id: jobId,
+        world_id: result.worldId,
+        thumbnail_url: result.thumbnailUrl,
+        caption: result.title,
+        spz_full_res_url: spzPublicUrl,
+        spz_500k_url: spzPublicUrl,
+        pano_url: result.panoramaProxyUrl,
+        viewer_url: result.viewerUrl,
+        model: job.model,
+        provider: "spaitial",
+      });
+
+      await updateStatus("ready_for_review", { completed_at: new Date().toISOString() });
+      await supabase
+        .from("experiences")
+        .update({ status: "ready_for_review", updated_at: new Date().toISOString() })
+        .eq("id", job.experience_id);
+    } catch (err) {
+      await updateStatus("worldlabs_generation_failed", {
+        error_message: err instanceof Error ? err.message : "Unknown error",
+        failed_at: new Date().toISOString(),
+        retry_count: (job.retry_count ?? 0) + 1,
+      });
+      await supabase
+        .from("experiences")
+        .update({ status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", job.experience_id);
+    }
+  }
+
+  /** Route to the correct 3D provider processor. */
+  async processSpatialJob(jobId: string) {
+    const supabase = createAdminClient();
+    const { data: job } = await supabase.from("worldlabs_jobs").select("provider").eq("id", jobId).single();
+    if (job?.provider === "spaitial") return this.processImmersiveWorldJob(jobId);
+    return this.processWorldLabsJob(jobId);
   }
 }
 

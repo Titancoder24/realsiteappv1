@@ -3,6 +3,7 @@ import { z } from "zod";
 const serverSchema = z.object({
   WORLD_LABS_API_KEY: z.string().min(1).optional(),
   WORLD_LABS_API_BASE: z.string().url().default("https://api.worldlabs.ai"),
+  SPAITIAL_API_KEY: z.string().min(1).optional(),
   OPENROUTER_API_KEY: z.string().min(1).optional(),
   OPENROUTER_PRIMARY_MODEL: z.string().default("google/gemini-2.5-flash-preview"),
   ELEVENLABS_API_KEY: z.string().min(1).optional(),
@@ -33,6 +34,7 @@ export const env = {
   server: serverSchema.parse({
     WORLD_LABS_API_KEY: opt(process.env.WORLD_LABS_API_KEY),
     WORLD_LABS_API_BASE: opt(process.env.WORLD_LABS_API_BASE) ?? "https://api.worldlabs.ai",
+    SPAITIAL_API_KEY: opt(process.env.SPAITIAL_API_KEY),
     OPENROUTER_API_KEY: opt(process.env.OPENROUTER_API_KEY),
     OPENROUTER_PRIMARY_MODEL: opt(process.env.OPENROUTER_PRIMARY_MODEL) ?? "google/gemini-2.5-flash-preview",
     ELEVENLABS_API_KEY: opt(process.env.ELEVENLABS_API_KEY),

@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Camera, Box, Smartphone } from "lucide-react";
+import { Camera, Box, Smartphone, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ExperienceType } from "@/types/domain";
 
@@ -24,9 +24,16 @@ const options: { type: ExperienceType; title: string; description: string; badge
   {
     type: "worldlabs_splat",
     title: "Generate 3D Walkthrough",
-    description: "Asynchronous 3D world generation from property media. Premium immersive splat experience.",
-    badge: "Premium 3D",
+    description: "World Labs pipeline — multi-image 3D world generation with marble viewer assets.",
+    badge: "World Labs",
     icon: Box,
+  },
+  {
+    type: "immersive_world",
+    title: "Immersive World",
+    description: "Turn a single property photo into an explorable 3D environment. Fast Echo generation from image.",
+    badge: "Echo 3D",
+    icon: Sparkles,
   },
 ];
 
@@ -38,7 +45,7 @@ export function ExperienceTypeSelector({
   onSelect: (type: ExperienceType) => void;
 }) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
       {options.map((opt) => {
         const Icon = opt.icon;
         const active = selected === opt.type;
@@ -64,7 +71,9 @@ export function ExperienceTypeSelector({
                     ? "Choose rooms → capture with phone → connect → publish"
                     : opt.type === "360_realistic"
                       ? "Upload panoramas → create rooms → add hotspots → publish"
-                      : "Upload media → generate 3D world → review → publish"}
+                      : opt.type === "immersive_world"
+                        ? "Upload photo → generate 3D world → annotate → publish"
+                        : "Upload media → generate 3D world → review → publish"}
                 </p>
               </CardContent>
             </Card>
