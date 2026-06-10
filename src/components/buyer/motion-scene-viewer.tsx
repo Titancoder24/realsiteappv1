@@ -81,12 +81,12 @@ export function MotionSceneViewer({
           <button
             key={ann.id}
             type="button"
-            className="absolute z-20 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full border-2 border-white bg-primary/90 p-1.5 shadow-lg hover:scale-110"
+            className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full border-2 border-white bg-primary/90 shadow-lg hover:scale-110 ${isMobile ? "wt-pin-mobile p-2" : "p-1.5"}`}
             style={{ left: pos.left, top: pos.top }}
             onClick={() => onAnnotationClick?.(ann)}
             aria-label={ann.title}
           >
-            <MapPin className="h-4 w-4 text-white" />
+            <MapPin className={`text-white ${isMobile ? "h-5 w-5" : "h-4 w-4"}`} />
           </button>
         );
       })}

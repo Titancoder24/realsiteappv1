@@ -153,15 +153,15 @@ export function CinematicWalkthroughWizard({
           <h1 className="text-lg font-semibold">AI Cinematic Walkthrough</h1>
           <p className="text-sm text-muted-foreground">Upload images → enhance → scroll walkthrough → RAG → publish</p>
         </div>
-        <div className="flex gap-2">
+        <div className="wt-btn-stack sm:flex-row">
           {slug && (
-            <Button variant="outline" size="sm" asChild>
+            <Button variant="outline" size="sm" className="min-h-[44px]" asChild>
               <a href={`/walkthrough/${slug}?preview=1`} target="_blank" rel="noreferrer">
                 <ExternalLink className="mr-1 h-4 w-4" /> Preview
               </a>
             </Button>
           )}
-          <Button size="sm" onClick={publish}>Publish</Button>
+          <Button size="sm" className="min-h-[44px]" onClick={publish}>Publish</Button>
         </div>
       </header>
 

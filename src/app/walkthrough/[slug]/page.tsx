@@ -7,9 +7,8 @@ import { AIVoicePanel } from "@/components/buyer/ai-voice-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { WalkthroughAnnotation, WalkthroughScene } from "@/types/cinematic-walkthrough";
-import { MessageSquare, Phone } from "lucide-react";
+import { X } from "lucide-react";
 import "@/styles/walkthrough-studio.css";
 
 interface WalkthroughData {
@@ -90,15 +89,20 @@ function WalkthroughViewerContent() {
       .catch(() => {});
   }, [data]);
 
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
   if (!data) {
-    return <div className="flex h-screen items-center justify-center bg-black text-white">Walkthrough not found</div>;
+    return <div className="flex h-[100dvh] items-center justify-center bg-black text-white">Walkthrough not found</div>;
   }
 
   const scenes = (data.walkthrough_scenes ?? []).sort((a, b) => a.scene_order - b.scene_order);
   const branding = data.properties?.projects?.branding;
 
   return (
-    <div className="relative h-screen bg-black">
+    <div className="relative h-[100dvh] w-full bg-black">
       <ScrollWalkthroughShell
         scenes={scenes}
         projectName={data.properties?.projects?.name ?? "Project"}
@@ -111,70 +115,98 @@ function WalkthroughViewerContent() {
           if (ann.cta_label) track("annotation_cta_clicked", { annotationId: ann.id, title: ann.title });
         }}
         onAskAI={() => { setShowAI(true); track("ai_question_asked", {}); }}
+        onContact={() => { setShowLead(true); track("lead_form_opened", {}); }}
       />
 
-      <div className="absolute right-4 top-20 z-50 flex flex-col gap-2">
-        <Button size="icon" variant="secondary" className="rounded-full" onClick={() => setShowAI(true)}>
-          <MessageSquare className="h-4 w-4" />
-        </Button>
-        <Button size="icon" variant="secondary" className="rounded-full" onClick={() => { setShowLead(true); track("lead_form_opened", {}); }}>
-          <Phone className="h-4 w-4" />
-        </Button>
-      </div>
-
       {showAI && sessionId && (
-        <div className="absolute bottom-0 left-0 right-0 z-50 max-h-[50vh] border-t bg-background">
-          <AIVoicePanel
-            propertyId={data.property_id}
-            organizationId={data.organization_id}
-            sessionId={sessionId}
-            onClose={() => setShowAI(false)}
-          />
+        <div className="wt-sheet">
+          <div className="wt-sheet-handle" />
+          <div className="wt-sheet-header">
+            <span className="font-semibold">Ask about this property</span>
+            <button type="button" className="rounded-full p-2" onClick={() => setShowAI(false)} aria-label="Close">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="wt-sheet-body">
+            <AIVoicePanel
+              propertyId={data.property_id}
+              organizationId={data.organization_id}
+              sessionId={sessionId}
+              onClose={() => setShowAI(false)}
+            />
+          </div>
         </div>
       )}
 
       {activeAnn && (
-        <div className="absolute bottom-0 left-0 right-0 z-50 border-t bg-background p-4">
-          <h3 className="font-semibold">{activeAnn.title}</h3>
-          <p className="text-sm text-muted-foreground">{activeAnn.description ?? activeAnn.short_description}</p>
-          <Button variant="ghost" size="sm" className="mt-2" onClick={() => setActiveAnn(null)}>Close</Button>
+        <div className="wt-sheet">
+          <div className="wt-sheet-handle" />
+          <div className="wt-sheet-header">
+            <span className="font-semibold">{activeAnn.title}</span>
+            <button type="button" className="rounded-full p-2" onClick={() => setActiveAnn(null)} aria-label="Close">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="wt-sheet-body p-4">
+            <p className="text-sm text-muted-foreground">{activeAnn.description ?? activeAnn.short_description}</p>
+            {activeAnn.cta_label && (
+              <Button className="mt-4 w-full min-h-[44px]" onClick={() => track("annotation_cta_clicked", { annotationId: activeAnn.id })}>
+                {activeAnn.cta_label}
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
-      <Dialog open={showLead} onOpenChange={setShowLead}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Contact sales</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>Name</Label><Input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} /></div>
-            <div><Label>Phone</Label><Input value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} /></div>
+      {showLead && (
+        <div className="wt-sheet">
+          <div className="wt-sheet-handle" />
+          <div className="wt-sheet-header">
+            <span className="font-semibold">Contact sales</span>
+            <button type="button" className="rounded-full p-2" onClick={() => setShowLead(false)} aria-label="Close">
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <DialogFooter>
-            <Button onClick={async () => {
-              await fetch("/api/leads", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  property_id: data.property_id,
-                  organization_id: data.organization_id,
-                  session_id: sessionId,
-                  name: leadForm.name,
-                  phone: leadForm.phone,
-                  source: "cinematic_walkthrough",
-                }),
-              });
-              track("lead_submitted", leadForm);
-              setShowLead(false);
-            }}>Submit</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="wt-sheet-body space-y-4 p-4">
+            <div>
+              <Label>Name</Label>
+              <Input className="mt-1 min-h-[44px] text-base" value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} />
+            </div>
+            <div>
+              <Label>Phone</Label>
+              <Input className="mt-1 min-h-[44px] text-base" type="tel" inputMode="tel" value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} />
+            </div>
+            <Button
+              className="w-full min-h-[48px]"
+              onClick={async () => {
+                await fetch("/api/leads", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    property_id: data.property_id,
+                    organization_id: data.organization_id,
+                    session_id: sessionId,
+                    name: leadForm.name,
+                    phone: leadForm.phone,
+                    source: "cinematic_walkthrough",
+                  }),
+                });
+                track("lead_submitted", leadForm);
+                setShowLead(false);
+              }}
+            >
+              Submit
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function WalkthroughPublicPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-black text-white">Loading walkthrough…</div>}>
+    <Suspense fallback={<div className="flex h-[100dvh] items-center justify-center bg-black text-white">Loading walkthrough…</div>}>
       <WalkthroughViewerContent />
     </Suspense>
   );
