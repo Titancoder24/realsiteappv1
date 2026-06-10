@@ -35,6 +35,8 @@ export function ImmersiveSplatShell({
     world_marble_url?: string;
     collider_mesh_url?: string;
     viewer_url?: string;
+    splat_format?: string;
+    provider?: string;
   };
   checkpoints?: Checkpoint[];
   floorMap?: { image_url: string; pins: FloorMapPin[] };
@@ -49,7 +51,7 @@ export function ImmersiveSplatShell({
   const [showPins, setShowPins] = useState(true);
   const [showFloorMap, setShowFloorMap] = useState(false);
 
-  const hasSplat = Boolean(splat?.spz_full_res_url || splat?.spz_500k_url || splat?.world_marble_url);
+  const hasSplat = Boolean(splat?.spz_full_res_url || splat?.spz_500k_url || splat?.world_marble_url || splat?.viewer_url);
 
   return (
     <div className="relative h-full w-full bg-black text-white">
@@ -61,10 +63,10 @@ export function ImmersiveSplatShell({
             spzFullResUrl={splat?.spz_full_res_url}
             worldMarbleUrl={splat?.world_marble_url}
             colliderMeshUrl={splat?.collider_mesh_url}
+            viewerUrl={splat?.viewer_url}
+            splatFormat={(splat as { splat_format?: string })?.splat_format ?? (splat?.provider === "spaitial" ? "spz" : undefined)}
             onPositionChange={onPositionChange}
           />
-        ) : splat?.viewer_url ? (
-          <iframe src={splat.viewer_url} className="h-full w-full border-0" allow="fullscreen" title="Immersive world" />
         ) : (
           <div className="flex h-full items-center justify-center text-white/60">3D world assets not ready yet.</div>
         )}

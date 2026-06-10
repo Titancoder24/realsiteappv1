@@ -17,7 +17,12 @@ export function ImmersiveCheckpointPlacer({
   propertyId: string;
   slug?: string;
 }) {
-  const [splat, setSplat] = useState<{ spz_full_res_url?: string; spz_500k_url?: string } | null>(null);
+  const [splat, setSplat] = useState<{
+    spz_full_res_url?: string;
+    spz_500k_url?: string;
+    viewer_url?: string;
+    provider?: string;
+  } | null>(null);
   const [position, setPosition] = useState({ x: 0, y: 1, z: 3 });
   const [form, setForm] = useState({ title: "", description: "", checkpoint_type: "info" });
   const [saving, setSaving] = useState(false);
@@ -71,10 +76,12 @@ export function ImmersiveCheckpointPlacer({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="relative h-64 overflow-hidden rounded-lg border bg-black sm:h-80">
-          {splat?.spz_full_res_url || splat?.spz_500k_url ? (
+          {splat?.spz_full_res_url || splat?.spz_500k_url || splat?.viewer_url ? (
             <SplatViewer
               spz500kUrl={splat.spz_500k_url}
               spzFullResUrl={splat.spz_full_res_url}
+              viewerUrl={splat.viewer_url}
+              splatFormat={splat.provider === "spaitial" ? "spz" : undefined}
               onPositionChange={(x, y, z) => setPosition({ x, y, z })}
             />
           ) : (

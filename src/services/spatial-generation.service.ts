@@ -299,6 +299,7 @@ export class SpatialGenerationService {
         spz_500k_url: spzPublicUrl,
         pano_url: result.panoramaProxyUrl,
         viewer_url: result.viewerUrl,
+        splat_format: result.splatFormat ?? "spz",
         model: job.model,
         provider: "spaitial",
       });

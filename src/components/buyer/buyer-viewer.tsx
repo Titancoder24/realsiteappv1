@@ -38,7 +38,15 @@ interface BuyerData {
     initial_pitch?: number;
     panorama_config?: { haov?: number; vaov?: number; vOffset?: number; hfov?: number };
   }[];
-  splat_worlds?: { spz_100k_url?: string; spz_500k_url?: string; spz_full_res_url?: string; world_marble_url?: string; collider_mesh_url?: string; viewer_url?: string }[];
+  splat_worlds?: {
+    spz_100k_url?: string;
+    spz_500k_url?: string;
+    spz_full_res_url?: string;
+    world_marble_url?: string;
+    collider_mesh_url?: string;
+    viewer_url?: string;
+    provider?: string;
+  }[];
   floor_maps?: { image_url: string; pins: { id: string; name: string; x: number; y: number; sceneId?: string; cameraPosition?: { x: number; y: number; z: number } }[] }[];
   checkpoints?: Checkpoint[];
 }

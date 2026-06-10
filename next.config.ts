@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  transpilePackages: ["@sparkjsdev/spark"],
   assetPrefix: process.env.CDN_URL || undefined,
   images: {
     remotePatterns: [{ protocol: "https", hostname: "**" }],
