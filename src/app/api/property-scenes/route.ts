@@ -15,7 +15,7 @@ const schema = z.object({
   is_start_scene: z.boolean().optional(),
   motion_type: z.string().optional(),
   motion_config: z.record(z.unknown()).optional(),
-  duration: z.number().optional(),
+  duration: z.coerce.number().optional(),
   edit_config: z.record(z.unknown()).optional(),
   mobile_crop: z.record(z.unknown()).optional(),
   desktop_crop: z.record(z.unknown()).optional(),

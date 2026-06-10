@@ -27,12 +27,20 @@ export async function POST(req: Request) {
     const body = schema.parse(await req.json());
     const admin = createAdminClient();
 
-    const { data: property } = await admin.from("properties").select("name").eq("id", body.property_id).single();
+    const { data: property } = await admin
+      .from("properties")
+      .select("name, organization_id")
+      .eq("id", body.property_id)
+      .single();
+
+    const organizationId = profile.organization_id ?? property?.organization_id;
+    if (!organizationId) return jsonError("Organization not found for this property", 400);
+
     const slug = slugify(`${property?.name ?? "property"}-${body.type}-${Date.now().toString(36)}`);
 
     const { data, error } = await admin.from("experiences").insert({
       property_id: body.property_id,
-      organization_id: profile.organization_id,
+      organization_id: organizationId,
       type: body.type,
       status: "draft",
       slug,

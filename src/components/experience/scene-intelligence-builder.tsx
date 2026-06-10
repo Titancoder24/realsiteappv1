@@ -10,6 +10,7 @@ import { SceneEditorPanel } from "@/components/experience/scene-editor-panel";
 import { SceneMotionPicker } from "@/components/experience/scene-motion-picker";
 import { FlatAnnotationEditor } from "@/components/experience/flat-annotation-editor";
 import type { MotionType, PropertyScene, SceneAnnotationRecord } from "@/types/scene-intelligence";
+import { toPropertyScenePatch } from "@/lib/scene-intelligence/patch";
 import { Film, MapPin, Pencil, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
@@ -24,9 +25,13 @@ export function SceneIntelligenceBuilder({ experienceId, propertyId }: { experie
 
   useEffect(() => {
     fetch(`/api/property-scenes?experienceId=${experienceId}`)
-      .then((r) => r.json())
-      .then((data: PropertyScene[]) => setScenes(data))
-      .catch(() => {});
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? "Failed to load scenes");
+        return data as PropertyScene[];
+      })
+      .then((data) => setScenes(Array.isArray(data) ? data : []))
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load scenes"));
   }, [experienceId]);
 
   async function addScene(fileUrl: string) {
@@ -62,14 +67,18 @@ export function SceneIntelligenceBuilder({ experienceId, propertyId }: { experie
   async function persistScene(patch: Partial<PropertyScene> = {}) {
     if (!selected) return;
     setSaving(true);
-    const body = { ...selected, ...patch };
+    const merged = { ...selected, ...patch };
+    const body = toPropertyScenePatch(merged);
     const res = await fetch(`/api/property-scenes/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     setSaving(false);
-    if (!res.ok) return toast.error("Failed to save scene");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return toast.error(err.error ?? "Failed to save scene");
+    }
     const data = await res.json();
     const updated = { ...data, scene_annotations: selected.scene_annotations ?? [] };
     setSelected(updated);

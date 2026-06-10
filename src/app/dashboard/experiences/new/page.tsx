@@ -16,7 +16,14 @@ export default function NewExperiencePage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/properties").then((r) => r.json()).then(setProperties).catch(() => {});
+    fetch("/api/properties")
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? "Failed to load properties");
+        return Array.isArray(data) ? data : [];
+      })
+      .then(setProperties)
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load properties"));
   }, []);
 
   async function create() {
@@ -38,7 +45,7 @@ export default function NewExperiencePage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Create Experience</h1>
         <p className="text-muted-foreground">Choose property and creation engine</p>
