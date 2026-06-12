@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WalkthroughRagChat } from "@/components/walkthrough/walkthrough-rag-chat";
-import type { WalkthroughChecklist, WalkthroughImage, WalkthroughScene, WalkthroughWizardStep } from "@/types/cinematic-walkthrough";
+import { WalkthroughAnnotationEditor } from "@/components/walkthrough/walkthrough-annotation-editor";
+import type { WalkthroughAnnotation, WalkthroughChecklist, WalkthroughImage, WalkthroughScene, WalkthroughWizardStep } from "@/types/cinematic-walkthrough";
 import { WALKTHROUGH_MOTION_PRESETS, WALKTHROUGH_WIZARD_STEPS } from "@/types/cinematic-walkthrough";
 import { Check, ExternalLink, GripVertical, Loader2, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -28,26 +29,93 @@ export function CinematicWalkthroughWizard({
   const [planning, setPlanning] = useState(false);
   const [generatingMotion, setGeneratingMotion] = useState(false);
   const [videoJobs, setVideoJobs] = useState<{ status: string; scene_id: string }[]>([]);
+  const [activePinSceneId, setActivePinSceneId] = useState<string | null>(null);
+  const [aiTestReply, setAiTestReply] = useState<string | null>(null);
+  const [aiTesting, setAiTesting] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
-    const [imgRes, sceneRes, checkRes] = await Promise.all([
+    const [imgRes, sceneRes, checkRes, jobsRes] = await Promise.all([
       fetch(`/api/walkthrough/images?experienceId=${experienceId}`),
       fetch(`/api/walkthrough/scenes?experienceId=${experienceId}`),
       fetch(`/api/walkthrough/checklist/${experienceId}`),
+      fetch(`/api/walkthrough/video/jobs?experienceId=${experienceId}`),
     ]);
-    const [imgData, sceneData, checkData] = await Promise.all([
+
+    if (!imgRes.ok) {
+      const err = await imgRes.json().catch(() => ({}));
+      throw new Error(err.error ?? "Failed to load images");
+    }
+    if (!sceneRes.ok) {
+      const err = await sceneRes.json().catch(() => ({}));
+      throw new Error(err.error ?? "Failed to load scenes");
+    }
+
+    const [imgData, sceneData, checkData, jobsData] = await Promise.all([
       imgRes.json(),
       sceneRes.json(),
       checkRes.json(),
+      jobsRes.ok ? jobsRes.json() : [],
     ]);
+
     if (Array.isArray(imgData)) setImages(imgData);
-    if (Array.isArray(sceneData)) setScenes(sceneData);
+    if (Array.isArray(sceneData)) {
+      setScenes(sceneData);
+      setActivePinSceneId((prev) => prev ?? sceneData[0]?.id ?? null);
+    }
     if (checkData.experience_id) setChecklist(checkData);
+    if (Array.isArray(jobsData)) setVideoJobs(jobsData);
   }, [experienceId]);
 
   useEffect(() => {
-    load().catch(() => toast.error("Failed to load walkthrough"));
+    load().catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load walkthrough"));
   }, [load]);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  async function prepareImagesForPlanning() {
+    const pending = images.filter((img) => img.enhancement_status === "pending" || img.enhancement_status === "processing");
+    for (const img of pending) {
+      await fetch(`/api/walkthrough/images/${img.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enhancement_status: "skipped" }),
+      });
+    }
+    if (pending.length) await load();
+  }
+
+  async function pollVideoJobs() {
+    const res = await fetch("/api/walkthrough/video/poll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ experience_id: experienceId }),
+    });
+    const data = await res.json();
+    if (!res.ok) return;
+    await load();
+    if (data.processing === 0) {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setGeneratingMotion(false);
+      if (data.completed > 0) toast.success(`Motion ready for ${data.completed} scene${data.completed === 1 ? "" : "s"}`);
+      if (data.failed > 0) toast.warning(`${data.failed} motion job${data.failed === 1 ? "" : "s"} failed — CSS fallback will be used`);
+    }
+  }
+
+  function startVideoPolling() {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => {
+      pollVideoJobs().catch(() => {});
+    }, 4000);
+    pollVideoJobs().catch(() => {});
+  }
 
   async function onFilesSelected(files: FileList | null) {
     if (!files?.length) return;
@@ -95,21 +163,30 @@ export function CinematicWalkthroughWizard({
   }
 
   async function planScenes() {
+    if (!images.length) return toast.error("Upload images first");
     setPlanning(true);
-    const res = await fetch("/api/walkthrough/plan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ experience_id: experienceId }),
-    });
-    const data = await res.json();
-    setPlanning(false);
-    if (!res.ok) return toast.error(data.error ?? "Scene planning failed");
-    if (data.flow_warnings?.length) {
-      data.flow_warnings.forEach((w: string) => toast.warning(w));
+    try {
+      await prepareImagesForPlanning();
+      const res = await fetch("/api/walkthrough/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ experience_id: experienceId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Scene planning failed");
+      if (data.flow_warnings?.length) {
+        data.flow_warnings.forEach((w: string) => toast.warning(w));
+      }
+      const count = data.scenes?.length ?? 0;
+      if (!count) throw new Error("No scenes were created — check your images and try again");
+      toast.success(`Created ${count} scenes`);
+      await load();
+      setStep("arrange");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Scene planning failed");
+    } finally {
+      setPlanning(false);
     }
-    toast.success(`Created ${data.scenes?.length ?? 0} scenes`);
-    await load();
-    setStep("arrange");
   }
 
   async function reorderScenes(ordered: WalkthroughScene[]) {
@@ -255,32 +332,41 @@ export function CinematicWalkthroughWizard({
                 </div>
               ))}
             </div>
-            <Button onClick={() => setStep("scenes")}>Continue to create scenes</Button>
+            <Button onClick={async () => {
+              await prepareImagesForPlanning();
+              setStep("scenes");
+            }}>Continue to create scenes</Button>
           </div>
         )}
 
         {step === "scenes" && (
           <div className="space-y-4">
             <div className="wt-card">
-              <h2 className="font-medium">Create scenes</h2>
+              <h2 className="font-medium">Analyze & plan scenes</h2>
               <p className="text-sm text-muted-foreground">AI names each room, suggests motion, and builds your walkthrough flow.</p>
-              <Button className="mt-4" onClick={planScenes} disabled={planning}>
+              <Button className="mt-4" onClick={planScenes} disabled={planning || !images.length}>
                 {planning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Generate scenes with AI
+                {planning ? "Analyzing images…" : "Generate scenes with AI"}
               </Button>
+              {!images.length && (
+                <p className="mt-2 text-xs text-amber-700">Upload at least one image to continue.</p>
+              )}
             </div>
             {scenes.length > 0 && (
-              <div className="space-y-2">
-                {scenes.map((s) => (
-                  <div key={s.id} className="wt-card flex items-center gap-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={s.thumbnail_url ?? s.image_url} alt="" className="h-14 w-20 rounded object-cover" />
-                    <div className="flex-1">
-                      <p className="font-medium">{s.title}</p>
-                      <p className="text-xs text-muted-foreground">{s.room_type} · {s.motion_type}</p>
+              <div className="wt-card space-y-3">
+                <h3 className="text-sm font-medium">Scene plan preview</h3>
+                <div className="wt-scene-grid">
+                  {scenes.map((s) => (
+                    <div key={s.id} className="wt-scene-preview-card">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={s.thumbnail_url ?? s.image_url} alt={s.title} />
+                      <div className="wt-scene-preview-meta">
+                        <strong>{s.title}</strong>
+                        <small>{s.room_type} · {s.motion_type}</small>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
             <Button onClick={() => setStep("arrange")} disabled={!scenes.length}>Arrange walkthrough</Button>
@@ -297,6 +383,11 @@ export function CinematicWalkthroughWizard({
               <p key={w} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{w}</p>
             ))}
             <div className="space-y-2">
+              {scenes.length === 0 && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  No scenes yet — go back to Analyze & plan scenes and generate your walkthrough.
+                </p>
+              )}
               {scenes.map((s, i) => (
                 <div key={s.id} className="wt-card flex items-center gap-3">
                   <GripVertical className="h-4 w-4 text-muted-foreground" />
@@ -339,24 +430,32 @@ export function CinematicWalkthroughWizard({
                     body: JSON.stringify({ experience_id: experienceId }),
                   });
                   const data = await res.json();
-                  setGeneratingMotion(false);
-                  if (!res.ok) return toast.error(data.error ?? "Motion generation failed");
-                  toast.success(`Motion generated ${data.completed}/${data.total} scenes`);
-                  const jobsRes = await fetch(`/api/walkthrough/video/jobs?experienceId=${experienceId}`);
-                  setVideoJobs(await jobsRes.json());
-                  await load();
+                  if (!res.ok) {
+                    setGeneratingMotion(false);
+                    return toast.error(data.error ?? "Motion generation failed");
+                  }
+                  toast.success(`Queued ${data.queued ?? data.submitted ?? 0} motion jobs — Veo runs in background`);
+                  startVideoPolling();
                 }}
               >
                 {generatingMotion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Generate all motion
+                {generatingMotion ? "Generating motion…" : "Generate all motion"}
               </Button>
             </div>
-            {scenes.map((s) => (
+            {scenes.map((s) => {
+              const job = videoJobs.find((j) => j.scene_id === s.id);
+              const status = s.video_url ? "completed" : job?.status ?? s.scene_status ?? "pending";
+              return (
               <div key={s.id} className="wt-card">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="font-medium">{s.title}</p>
-                  <span className="text-xs text-muted-foreground">{s.video_url ? "Motion ready" : s.scene_status ?? "fallback image"}</span>
+                  <span className="wt-motion-status" data-status={status}>
+                    {s.video_url ? "Motion ready" : status === "processing" ? "Generating…" : status === "failed" ? "Fallback image" : "Queued / fallback"}
+                  </span>
                 </div>
+                {s.video_url && (
+                  <video src={s.video_url} className="mb-2 w-full rounded-md" controls muted playsInline />
+                )}
                 <div className="flex flex-wrap gap-2">
                   {WALKTHROUGH_MOTION_PRESETS.map((m) => (
                     <button
@@ -370,7 +469,7 @@ export function CinematicWalkthroughWizard({
                   ))}
                 </div>
               </div>
-            ))}
+            );})}
             {videoJobs.length > 0 && (
               <p className="text-xs text-muted-foreground">
                 Jobs: {videoJobs.filter((j) => j.status === "completed").length} completed · {videoJobs.filter((j) => j.status === "failed").length} failed
@@ -382,17 +481,46 @@ export function CinematicWalkthroughWizard({
 
         {step === "pins" && (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">AI suggested pins were added during scene creation. Add more from the scene list or edit in preview.</p>
-            {scenes.map((s) => (
-              <div key={s.id} className="wt-card">
-                <p className="font-medium">{s.title}</p>
-                <p className="text-xs text-muted-foreground">{(s.walkthrough_annotations ?? []).length} pins</p>
-                {(s.walkthrough_annotations ?? []).map((a) => (
-                  <span key={a.id} className="mr-2 mt-1 inline-block rounded bg-muted px-2 py-0.5 text-xs">{a.title}</span>
-                ))}
-              </div>
-            ))}
-            <Button onClick={() => setStep("rag")}>Add property details</Button>
+            <div className="wt-card">
+              <h2 className="font-medium">Add annotation layers</h2>
+              <p className="text-sm text-muted-foreground">Place pins on each scene. AI suggested pins from planning appear below — click to edit or add more.</p>
+            </div>
+            {scenes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Create scenes first before adding annotations.</p>
+            ) : (
+              <>
+                <div className="wt-scene-tabs">
+                  {scenes.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className="wt-scene-tab"
+                      data-active={activePinSceneId === s.id}
+                      onClick={() => setActivePinSceneId(s.id)}
+                    >
+                      {s.title}
+                    </button>
+                  ))}
+                </div>
+                {activePinSceneId && (() => {
+                  const activeScene = scenes.find((s) => s.id === activePinSceneId);
+                  if (!activeScene) return null;
+                  const anns = activeScene.walkthrough_annotations ?? [];
+                  return (
+                    <WalkthroughAnnotationEditor
+                      scene={activeScene}
+                      annotations={anns}
+                      onAnnotationsChange={(next) => {
+                        setScenes((prev) => prev.map((s) => (
+                          s.id === activeScene.id ? { ...s, walkthrough_annotations: next } : s
+                        )));
+                      }}
+                    />
+                  );
+                })()}
+              </>
+            )}
+            <Button onClick={() => setStep("rag")} disabled={!scenes.length}>Add property knowledge</Button>
           </div>
         )}
 
@@ -410,14 +538,53 @@ export function CinematicWalkthroughWizard({
         {step === "preview" && (
           <div className="space-y-4">
             <div className="wt-card">
-              <h2 className="font-medium">Preview</h2>
-              <p className="text-sm text-muted-foreground">Scroll through the cinematic walkthrough as buyers will see it.</p>
+              <h2 className="font-medium">Test AI & preview</h2>
+              <p className="text-sm text-muted-foreground">Scroll through the cinematic walkthrough as buyers will see it, and test the AI assistant.</p>
               {slug && (
                 <Button className="mt-4" asChild>
                   <a href={`/walkthrough/${slug}?preview=1`} target="_blank" rel="noreferrer">
                     <ExternalLink className="mr-2 h-4 w-4" /> Open preview
                   </a>
                 </Button>
+              )}
+            </div>
+            <div className="wt-card space-y-3">
+              <h3 className="text-sm font-medium">Quick AI test</h3>
+              <p className="text-xs text-muted-foreground">Ask a buyer-style question — uses your property knowledge and scene context.</p>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="What amenities does this property have?"
+                  onKeyDown={async (e) => {
+                    if (e.key !== "Enter") return;
+                    const query = (e.target as HTMLInputElement).value.trim();
+                    if (!query) return;
+                    setAiTesting(true);
+                    try {
+                      const res = await fetch("/api/walkthrough/buyer-chat", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          organizationId: scenes[0]?.organization_id,
+                          propertyId,
+                          experienceId,
+                          activeSceneId: scenes[0]?.id,
+                          query,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error ?? "AI test failed");
+                      setAiTestReply(data.answer ?? data.reply ?? "No response");
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "AI test failed");
+                    } finally {
+                      setAiTesting(false);
+                    }
+                  }}
+                />
+                {aiTesting && <Loader2 className="h-4 w-4 animate-spin self-center" />}
+              </div>
+              {aiTestReply && (
+                <p className="rounded-md bg-muted px-3 py-2 text-sm">{aiTestReply}</p>
               )}
             </div>
             {checklist && (

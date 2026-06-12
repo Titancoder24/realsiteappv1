@@ -47,6 +47,30 @@ export class OpenRouterVideoService {
     };
   }
 
+  async pollOnce(pollingUrl: string): Promise<{
+    status: string;
+    unsignedUrls: string[];
+    error?: string;
+  }> {
+    const res = await fetch(pollingUrl, { headers: { Authorization: `Bearer ${this.apiKey}` } });
+    if (!res.ok) {
+      throw new Error(`Veo poll failed: ${res.status} ${await res.text()}`);
+    }
+    const data = await res.json();
+    const status = String(data.status ?? "processing");
+
+    if (status === "completed") {
+      return {
+        status,
+        unsignedUrls: Array.isArray(data.unsigned_urls) ? data.unsigned_urls.map(String) : [],
+      };
+    }
+    if (status === "failed") {
+      return { status, unsignedUrls: [], error: String(data.error ?? "Video generation failed") };
+    }
+    return { status, unsignedUrls: [] };
+  }
+
   async pollUntilComplete(pollingUrl: string, maxAttempts = 60, intervalMs = 5000): Promise<{
     status: string;
     unsignedUrls: string[];

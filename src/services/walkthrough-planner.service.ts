@@ -1,5 +1,5 @@
 import { GEMINI_35_FLASH_MODEL, sendChatCompletion } from "@/lib/openrouter";
-import { walkthroughPlanSchema, type WalkthroughPlanPayload } from "@/lib/walkthrough-planner-schema";
+import { parseWalkthroughPlan, type WalkthroughPlanPayload } from "@/lib/walkthrough-planner-schema";
 import type { ScenePlanResult, WalkthroughMotionType } from "@/types/cinematic-walkthrough";
 
 const PROPERTY_FLOWS: Record<string, string> = {
@@ -96,7 +96,7 @@ export class WalkthroughPlannerService {
       temperature: 0.2,
       maxTokens: 12000,
       responseFormat: { type: "json_object" },
-      reasoning: { effort: "low" },
+      reasoning: { effort: "minimal" },
     });
 
     const raw = result.choices?.[0]?.message?.content ?? "{}";
@@ -113,11 +113,12 @@ export class WalkthroughPlannerService {
         temperature: 0,
         maxTokens: 12000,
         responseFormat: { type: "json_object" },
+        reasoning: { effort: "minimal" },
       });
       parsed = JSON.parse(String(repair.choices?.[0]?.message?.content ?? "{}"));
     }
 
-    const plan = walkthroughPlanSchema.parse(parsed);
+    const plan = parseWalkthroughPlan(parsed, images.map((img) => img.id), propertyType);
     const plans = toScenePlanResults(plan);
     return { plan, plans, flow_warnings: plan.flow_warnings };
   }

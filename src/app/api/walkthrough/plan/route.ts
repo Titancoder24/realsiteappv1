@@ -3,6 +3,8 @@ import { z } from "zod";
 import { withAuth, jsonError } from "@/lib/api-utils";
 import { planAndCreateScenes } from "@/services/walkthrough.service";
 
+export const maxDuration = 120;
+
 const schema = z.object({ experience_id: z.string().uuid() });
 
 export async function POST(req: Request) {

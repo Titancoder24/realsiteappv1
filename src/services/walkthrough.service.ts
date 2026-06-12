@@ -162,11 +162,18 @@ export async function planAndCreateScenes(experienceId: string) {
 
   const sorted = [...plans].sort((a, b) => a.suggested_order - b.suggested_order);
   const scenes: WalkthroughScene[] = [];
+  const usedImageIds = new Set<string>();
 
   for (let i = 0; i < sorted.length; i++) {
     const plan = sorted[i];
-    const img = images.find((im) => im.id === plan.image_id);
-    if (!img || !plan.include) continue;
+    if (!plan.include) continue;
+
+    let img = images.find((im) => im.id === plan.image_id && !usedImageIds.has(im.id));
+    if (!img) {
+      img = images.find((im) => !usedImageIds.has(im.id));
+    }
+    if (!img) continue;
+    usedImageIds.add(img.id);
 
     const imageUrl = img.enhanced_image_url ?? img.original_image_url;
 
@@ -211,14 +218,53 @@ export async function planAndCreateScenes(experienceId: string) {
           experience_id: experienceId,
           title: ann.title,
           short_description: ann.title,
-          category: ann.category ?? "feature",
+          category: ann.category ?? "room_feature",
           x_position: ann.x,
           y_position: ann.y,
           rag_enabled: true,
         });
       }
 
-      await syncWalkthroughSceneToRAG(scene as WalkthroughScene, img.organization_id);
+      try {
+        await syncWalkthroughSceneToRAG(scene as WalkthroughScene, img.organization_id);
+      } catch {
+        // RAG sync should not block scene creation
+      }
+    }
+  }
+
+  // Create scenes for any uploaded images the planner skipped
+  for (const img of images) {
+    if (usedImageIds.has(img.id)) continue;
+    const imageUrl = img.enhanced_image_url ?? img.original_image_url;
+    const order = scenes.length;
+
+    const { data: scene } = await admin.from("walkthrough_scenes").insert({
+      experience_id: experienceId,
+      property_id: exp.property_id,
+      organization_id: exp.organization_id,
+      image_id: img.id,
+      title: img.file_name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ") || `Scene ${order + 1}`,
+      description: "Additional property scene",
+      room_type: "room",
+      caption: `Scene ${order + 1}`,
+      image_url: imageUrl,
+      thumbnail_url: img.thumbnail_url ?? imageUrl,
+      poster_url: img.thumbnail_url ?? imageUrl,
+      scene_order: order,
+      is_start_scene: order === 0,
+      motion_type: "push_in",
+      veo_prompt: `Create a premium real-estate walkthrough motion from this room image. Slow forward dolly with subtle parallax. Preserve exact layout and architecture. No people.`,
+      ai_context: `Scene ${order + 1}`,
+      duration: 6,
+      timeline_start: order * 6,
+      timeline_end: (order + 1) * 6,
+      scene_status: "planned",
+    }).select().single();
+
+    if (scene) {
+      scenes.push(scene as WalkthroughScene);
+      usedImageIds.add(img.id);
     }
   }
 
@@ -348,7 +394,7 @@ export async function saveRagEntriesFromChat(
   return saved;
 }
 
-export async function runSceneVideoGeneration(sceneId: string) {
+export async function queueSceneVideoJob(sceneId: string) {
   const admin = createAdminClient();
   const { data: scene, error } = await admin
     .from("walkthrough_scenes")
@@ -356,16 +402,30 @@ export async function runSceneVideoGeneration(sceneId: string) {
     .eq("id", sceneId)
     .single();
   if (error || !scene) throw new Error("Scene not found");
+  if (scene.video_url) return { sceneId, status: "completed" as const, video_url: scene.video_url };
 
   const prompt = scene.veo_prompt ?? `Create a premium real-estate walkthrough motion from this ${scene.room_type ?? "room"} image. Slow forward dolly with subtle parallax. Preserve exact layout and architecture. No people.`;
   const orgId = scene.organization_id ?? (scene.experiences as { organization_id?: string })?.organization_id;
+
+  const { data: existing } = await admin
+    .from("walkthrough_video_jobs")
+    .select("id, status, polling_url")
+    .eq("scene_id", sceneId)
+    .in("status", ["queued", "submitted", "processing"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    return { sceneId, jobId: existing.id, status: existing.status as "queued" | "submitted" | "processing" };
+  }
 
   const { data: job } = await admin.from("walkthrough_video_jobs").insert({
     scene_id: sceneId,
     experience_id: scene.experience_id,
     property_id: scene.property_id,
     organization_id: orgId,
-    status: "submitted",
+    status: "queued",
     model: process.env.OPENROUTER_VIDEO_MODEL ?? "google/veo-3.1-lite",
     prompt,
     started_at: new Date().toISOString(),
@@ -373,24 +433,68 @@ export async function runSceneVideoGeneration(sceneId: string) {
 
   await admin.from("walkthrough_scenes").update({ scene_status: "motion_processing" }).eq("id", sceneId);
 
-  try {
-    const { jobId, pollingUrl } = await openRouterVideoService.submitVideoJob(prompt, scene.image_url);
-    await admin.from("walkthrough_video_jobs").update({
-      openrouter_job_id: jobId,
-      polling_url: pollingUrl,
-      status: "processing",
-    }).eq("id", job!.id);
+  return { sceneId, jobId: job!.id, status: "queued" as const };
+}
 
-    const result = await openRouterVideoService.pollUntilComplete(pollingUrl);
-    if (result.status === "failed" || !result.unsignedUrls.length) {
-      throw new Error(result.error ?? "No video URL returned");
-    }
+async function ensureVideoJobSubmitted(jobId: string) {
+  const admin = createAdminClient();
+  const { data: job, error } = await admin
+    .from("walkthrough_video_jobs")
+    .select("*, walkthrough_scenes(image_url)")
+    .eq("id", jobId)
+    .single();
+  if (error || !job) throw new Error("Video job not found");
+  if (job.polling_url) return job;
 
+  const imageUrl = (job.walkthrough_scenes as { image_url?: string } | null)?.image_url;
+  const { jobId: openrouterJobId, pollingUrl } = await openRouterVideoService.submitVideoJob(job.prompt, imageUrl);
+
+  const { data: updated } = await admin.from("walkthrough_video_jobs").update({
+    openrouter_job_id: openrouterJobId,
+    polling_url: pollingUrl,
+    status: "processing",
+  }).eq("id", jobId).select().single();
+
+  return updated ?? job;
+}
+
+/** @deprecated Use queueSceneVideoJob — submit happens on poll to keep API under 1s */
+export async function submitSceneVideoJob(sceneId: string) {
+  return queueSceneVideoJob(sceneId);
+}
+
+export async function pollSceneVideoJob(jobId: string) {
+  const admin = createAdminClient();
+  const { data: job, error } = await admin
+    .from("walkthrough_video_jobs")
+    .select("*")
+    .eq("id", jobId)
+    .single();
+  if (error || !job) throw new Error("Video job not found");
+  if (job.status === "completed" && job.stored_video_url) {
+    return { jobId, status: "completed" as const, video_url: job.stored_video_url };
+  }
+  if (job.status === "failed") {
+    return { jobId, status: "failed" as const, error: job.error ?? "Video generation failed" };
+  }
+
+  const activeJob = job.status === "queued" || !job.polling_url
+    ? await ensureVideoJobSubmitted(jobId)
+    : job;
+  if (!activeJob.polling_url) throw new Error("Job missing polling URL");
+
+  const result = await openRouterVideoService.pollOnce(activeJob.polling_url);
+  const { data: scene } = await admin.from("walkthrough_scenes").select("id, experience_id, property_id, organization_id").eq("id", job.scene_id).single();
+  if (!scene) throw new Error("Scene not found for video job");
+
+  const orgId = job.organization_id ?? scene.organization_id;
+
+  if (result.status === "completed" && result.unsignedUrls.length) {
     const storedUrl = await openRouterVideoService.downloadAndStore(
       result.unsignedUrls[0],
       orgId!,
       scene.property_id,
-      sceneId,
+      scene.id,
     );
 
     await admin.from("walkthrough_video_jobs").update({
@@ -401,7 +505,7 @@ export async function runSceneVideoGeneration(sceneId: string) {
       video_url_1080p: storedUrl,
       video_url_mobile: storedUrl,
       completed_at: new Date().toISOString(),
-    }).eq("id", job!.id);
+    }).eq("id", jobId);
 
     await admin.from("walkthrough_scenes").update({
       video_url: storedUrl,
@@ -409,23 +513,27 @@ export async function runSceneVideoGeneration(sceneId: string) {
       video_url_1080p: storedUrl,
       video_url_mobile: storedUrl,
       scene_status: "motion_ready",
-    }).eq("id", sceneId);
+    }).eq("id", scene.id);
 
     await refreshWalkthroughChecklist(scene.experience_id);
-    return storedUrl;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Video generation failed";
+    return { jobId, status: "completed" as const, video_url: storedUrl };
+  }
+
+  if (result.status === "failed") {
+    const msg = result.error ?? "Video generation failed";
     await admin.from("walkthrough_video_jobs").update({
       status: "failed",
       error: msg,
       completed_at: new Date().toISOString(),
-    }).eq("id", job!.id);
-    await admin.from("walkthrough_scenes").update({ scene_status: "fallback_image" }).eq("id", sceneId);
-    throw err;
+    }).eq("id", jobId);
+    await admin.from("walkthrough_scenes").update({ scene_status: "fallback_image" }).eq("id", scene.id);
+    return { jobId, status: "failed" as const, error: msg };
   }
+
+  return { jobId, status: "processing" as const };
 }
 
-export async function generateAllSceneVideos(experienceId: string) {
+export async function queueAllSceneVideoJobs(experienceId: string) {
   const admin = createAdminClient();
   const { data: scenes } = await admin
     .from("walkthrough_scenes")
@@ -434,17 +542,69 @@ export async function generateAllSceneVideos(experienceId: string) {
     .is("video_url", null)
     .order("scene_order");
 
-  const results: { sceneId: string; ok: boolean; error?: string }[] = [];
-  for (const scene of scenes ?? []) {
+  const results = await Promise.all(
+    (scenes ?? []).map(async (scene) => {
+      try {
+        const queued = await queueSceneVideoJob(scene.id);
+        return { sceneId: scene.id, ok: true, status: queued.status };
+      } catch (e) {
+        return { sceneId: scene.id, ok: false, error: e instanceof Error ? e.message : "failed" };
+      }
+    }),
+  );
+  return results;
+}
+
+export async function submitAllSceneVideoJobs(experienceId: string) {
+  return queueAllSceneVideoJobs(experienceId);
+}
+
+export async function pollPendingVideoJobs(experienceId: string) {
+  const admin = createAdminClient();
+  const { data: jobs } = await admin
+    .from("walkthrough_video_jobs")
+    .select("id")
+    .eq("experience_id", experienceId)
+    .in("status", ["queued", "submitted", "processing"])
+    .order("created_at");
+
+  const results: { jobId: string; status: string; video_url?: string; error?: string }[] = [];
+  for (const job of jobs ?? []) {
     try {
-      await runSceneVideoGeneration(scene.id);
-      results.push({ sceneId: scene.id, ok: true });
+      const result = await pollSceneVideoJob(job.id);
+      results.push(result);
     } catch (e) {
-      results.push({ sceneId: scene.id, ok: false, error: e instanceof Error ? e.message : "failed" });
+      results.push({ jobId: job.id, status: "failed", error: e instanceof Error ? e.message : "poll failed" });
     }
   }
-  await refreshWalkthroughChecklist(experienceId);
+
+  if (results.some((r) => r.status === "completed")) {
+    await refreshWalkthroughChecklist(experienceId);
+  }
+
   return results;
+}
+
+export async function runSceneVideoGeneration(sceneId: string) {
+  const submitted = await submitSceneVideoJob(sceneId);
+  if (submitted.status === "completed" && "video_url" in submitted) {
+    return submitted.video_url!;
+  }
+
+  const jobId = submitted.jobId;
+  if (!jobId) throw new Error("Failed to submit video job");
+
+  for (let i = 0; i < 60; i++) {
+    const result = await pollSceneVideoJob(jobId);
+    if (result.status === "completed" && result.video_url) return result.video_url;
+    if (result.status === "failed") throw new Error(result.error ?? "Video generation failed");
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  throw new Error("Video generation timed out");
+}
+
+export async function generateAllSceneVideos(experienceId: string) {
+  return submitAllSceneVideoJobs(experienceId);
 }
 
 export { MAX_IMAGES };

@@ -1,23 +1,36 @@
 import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/api-utils";
-import { generateAllSceneVideos, runSceneVideoGeneration } from "@/services/walkthrough.service";
+import { runSceneVideoGeneration, queueAllSceneVideoJobs, queueSceneVideoJob } from "@/services/walkthrough.service";
+
+export const maxDuration = 10;
 
 export async function POST(req: Request) {
   return withAuth(async () => {
     const body = await req.json();
-    const { experience_id, scene_id } = body as { experience_id?: string; scene_id?: string };
+    const { experience_id, scene_id, wait } = body as { experience_id?: string; scene_id?: string; wait?: boolean };
 
     if (scene_id) {
-      const url = await runSceneVideoGeneration(scene_id);
-      return NextResponse.json({ ok: true, scene_id, video_url: url });
+      if (wait) {
+        const url = await runSceneVideoGeneration(scene_id);
+        return NextResponse.json({ ok: true, scene_id, video_url: url });
+      }
+      const queued = await queueSceneVideoJob(scene_id);
+      return NextResponse.json({ ok: true, ...queued });
     }
 
     if (!experience_id) {
       return NextResponse.json({ error: "experience_id or scene_id required" }, { status: 400 });
     }
 
-    const results = await generateAllSceneVideos(experience_id);
-    const completed = results.filter((r) => r.ok).length;
-    return NextResponse.json({ ok: true, completed, total: results.length, results });
-  });
+    const results = await queueAllSceneVideoJobs(experience_id);
+    const queued = results.filter((r) => r.ok).length;
+    return NextResponse.json({
+      ok: true,
+      queued,
+      submitted: queued,
+      total: results.length,
+      results,
+      message: "Jobs queued — Veo runs in background via poll",
+    });
+  }, "project_manager");
 }

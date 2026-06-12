@@ -98,6 +98,7 @@ export interface WalkthroughAnnotation {
   rag_entry_id?: string | null;
   crm_tracking_enabled: boolean;
   sort_order: number;
+  created_at?: string;
 }
 
 export interface WalkthroughChecklist {
