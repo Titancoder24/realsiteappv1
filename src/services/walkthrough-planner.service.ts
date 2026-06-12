@@ -1,24 +1,73 @@
 import { GEMINI_35_FLASH_MODEL, sendChatCompletion } from "@/lib/openrouter";
+import { walkthroughPlanSchema, type WalkthroughPlanPayload } from "@/lib/walkthrough-planner-schema";
 import type { ScenePlanResult, WalkthroughMotionType } from "@/types/cinematic-walkthrough";
 
-const PLANNER_PROMPT = `You are a real estate walkthrough planner. Analyze property images and return JSON only.
-For each image, detect room type, suggest title, description, caption, motion, order, objects, annotation points, quality notes.
-Think like a sales walkthrough: exterior → entrance → living → kitchen/dining → balcony → bedrooms → bathrooms → amenities.
-Return strict JSON array with objects:
+const PROPERTY_FLOWS: Record<string, string> = {
+  residential: "exterior → entrance → living → dining → kitchen → balcony → bedrooms → bathrooms → amenities → CTA",
+  villa: "exterior → gate → entrance → living → dining → kitchen → master bedroom → pool → garden → terrace → CTA",
+  office: "building exterior → reception → lift lobby → floor plate → open workspace → cabins → conference rooms → pantry → parking → leasing CTA",
+  coworking: "reception → lounge → hot desk → private cabin → meeting room → phone booth → event space → cafe → pricing CTA",
+  warehouse: "gate → loading bay → storage → production floor → admin office → parking → compliance zones → CTA",
+  factory: "gate → loading bay → production floor → storage → admin office → parking → fire safety → CTA",
+  interior: "entrance → living → dining → kitchen → bedroom → bathroom → detail shots → materials → CTA",
+};
+
+function buildPlannerPrompt(propertyType: string, propertyName?: string) {
+  const flow = PROPERTY_FLOWS[propertyType] ?? PROPERTY_FLOWS.residential;
+  return `You are a Property Walkthrough planner for real estate. Analyze property images and return strict JSON only.
+Property: ${propertyName ?? "Unnamed property"}
+Property type: ${propertyType}
+Recommended flow: ${flow}
+
+For each image: classify room_type, title, description, sales caption, motion, order, duration (4-8 sec), conservative Veo video prompt, objects, annotation pins (normalized x/y 0-1), quality notes.
+Veo prompts must preserve exact architecture, furniture, layout. No people. No fake furniture. No distortion.
+Return JSON object:
 {
-  "image_id": "uuid",
-  "room_type": "exterior|entrance|living_room|kitchen|dining|bedroom|bathroom|balcony|amenity|other",
-  "title": "Modern Kitchen",
-  "description": "Brief scene description",
-  "caption": "Sales caption for buyer",
-  "suggested_motion": "push_in|pull_out|truck_left|truck_right|pedestal_up|pedestal_down|cinematic_zoom|static_premium|depth_parallax|slow_rotate",
-  "suggested_order": 1,
-  "important_objects": ["island", "countertop"],
-  "suggested_annotations": [{"title": "Kitchen island", "x": 0.5, "y": 0.6}],
-  "quality_notes": "Image quality assessment",
-  "include": true,
-  "warnings": ["optional warning strings"]
+  "tour_title": "Premium Villa Walkthrough",
+  "property_type": "${propertyType}",
+  "flow_warnings": ["optional warnings"],
+  "scenes": [{
+    "image_id": "uuid",
+    "room_type": "exterior|entrance|living_room|kitchen|...",
+    "title": "Modern Kitchen",
+    "description": "Brief scene description",
+    "caption": "Sales caption",
+    "suggested_motion": "push_in",
+    "suggested_order": 1,
+    "duration": 6,
+    "veo_prompt": "Create a premium real-estate walkthrough motion from this kitchen image. Slow forward dolly with subtle parallax. Preserve exact room layout, architecture, furniture, walls, flooring, windows, lighting, and proportions. Do not add people. Do not change architecture. Do not distort objects.",
+    "important_objects": ["island"],
+    "suggested_annotations": [{"title": "Kitchen island", "x": 0.5, "y": 0.6, "category": "feature"}],
+    "quality_notes": "Assessment",
+    "include": true,
+    "warnings": []
+  }]
 }`;
+}
+
+function toScenePlanResults(plan: WalkthroughPlanPayload): ScenePlanResult[] {
+  return plan.scenes.map((p) => ({
+    image_id: p.image_id,
+    room_type: p.room_type,
+    title: p.title,
+    description: p.description,
+    caption: p.caption,
+    suggested_motion: p.suggested_motion as WalkthroughMotionType,
+    suggested_order: p.suggested_order,
+    duration: p.duration,
+    veo_prompt: p.veo_prompt,
+    important_objects: p.important_objects,
+    suggested_annotations: p.suggested_annotations.map((a) => ({
+      title: a.title,
+      x: a.x,
+      y: a.y,
+      category: a.category,
+    })),
+    quality_notes: p.quality_notes,
+    include: p.include,
+    warnings: p.warnings,
+  }));
+}
 
 export class WalkthroughPlannerService {
   private get model() {
@@ -27,11 +76,13 @@ export class WalkthroughPlannerService {
 
   async planScenes(
     images: { id: string; url: string; file_name: string }[],
-  ): Promise<{ plans: ScenePlanResult[]; flow_warnings: string[] }> {
+    options?: { propertyType?: string; propertyName?: string },
+  ): Promise<{ plan: WalkthroughPlanPayload; plans: ScenePlanResult[]; flow_warnings: string[] }> {
+    const propertyType = options?.propertyType ?? "residential";
     const content = [
       {
         type: "text" as const,
-        text: `${PLANNER_PROMPT}\n\nImages to analyze:\n${images.map((img, i) => `${i + 1}. id=${img.id} file=${img.file_name}`).join("\n")}`,
+        text: `${buildPlannerPrompt(propertyType, options?.propertyName)}\n\nImages:\n${images.map((img, i) => `${i + 1}. id=${img.id} file=${img.file_name}`).join("\n")}`,
       },
       ...images.slice(0, 20).map((img) => ({
         type: "image_url" as const,
@@ -43,42 +94,32 @@ export class WalkthroughPlannerService {
       model: this.model,
       messages: [{ role: "user", content }],
       temperature: 0.2,
-      maxTokens: 8192,
+      maxTokens: 12000,
       responseFormat: { type: "json_object" },
+      reasoning: { effort: "low" },
     });
 
     const raw = result.choices?.[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(typeof raw === "string" ? raw : JSON.stringify(raw));
+    } catch {
+      const repair = await sendChatCompletion({
+        model: this.model,
+        messages: [
+          { role: "system", content: "Fix the JSON and return only valid JSON matching the walkthrough plan schema." },
+          { role: "user", content: String(raw) },
+        ],
+        temperature: 0,
+        maxTokens: 12000,
+        responseFormat: { type: "json_object" },
+      });
+      parsed = JSON.parse(String(repair.choices?.[0]?.message?.content ?? "{}"));
+    }
 
-    const plans: ScenePlanResult[] = (parsed.scenes ?? parsed.plans ?? (Array.isArray(parsed) ? parsed : [])).map(
-      (p: Record<string, unknown>, idx: number) => ({
-        image_id: String(p.image_id ?? images[idx]?.id ?? ""),
-        room_type: String(p.room_type ?? "other"),
-        title: String(p.title ?? `Scene ${idx + 1}`),
-        description: String(p.description ?? ""),
-        caption: String(p.caption ?? ""),
-        suggested_motion: (p.suggested_motion as WalkthroughMotionType) ?? "push_in",
-        suggested_order: Number(p.suggested_order ?? idx + 1),
-        important_objects: Array.isArray(p.important_objects) ? p.important_objects.map(String) : [],
-        suggested_annotations: Array.isArray(p.suggested_annotations)
-          ? p.suggested_annotations.map((a: { title?: string; x?: number; y?: number }) => ({
-              title: String(a.title ?? "Feature"),
-              x: Math.min(1, Math.max(0, Number(a.x ?? 0.5))),
-              y: Math.min(1, Math.max(0, Number(a.y ?? 0.5))),
-            }))
-          : [],
-        quality_notes: String(p.quality_notes ?? ""),
-        include: p.include !== false,
-        warnings: Array.isArray(p.warnings) ? p.warnings.map(String) : [],
-      }),
-    );
-
-    const flow_warnings: string[] = Array.isArray(parsed.flow_warnings) ? parsed.flow_warnings.map(String) : [];
-    const roomTypes = plans.filter((p) => p.include).map((p) => p.room_type);
-    if (!roomTypes.includes("exterior")) flow_warnings.push("This property has no exterior scene.");
-    if (!roomTypes.some((r) => r.includes("bedroom"))) flow_warnings.push("This property has no bedroom scene.");
-
-    return { plans, flow_warnings };
+    const plan = walkthroughPlanSchema.parse(parsed);
+    const plans = toScenePlanResults(plan);
+    return { plan, plans, flow_warnings: plan.flow_warnings };
   }
 
   async extractRagFromChat(
@@ -91,7 +132,7 @@ export class WalkthroughPlannerService {
         {
           role: "system",
           content: `You help real estate teams build approved property knowledge for an AI assistant.
-Extract structured facts from user messages into RAG entries. Categories: project_details, unit_details, pricing, availability, amenities, possession, legal, rera, faq, developer_profile, nri_process.
+Extract structured facts from user messages into RAG entries. Categories: project_details, unit_details, pricing, availability, amenities, possession, legal, rera, faq, developer_profile, nri_process, leasing, warehouse_specs, factory_specs, seat_capacity.
 Return JSON: {"reply": "friendly confirmation", "entries": [{"category": "pricing", "title": "Starting price", "content": "..."}]}
 Only extract facts explicitly stated. Do not invent data.`,
         },
@@ -115,6 +156,34 @@ Only extract facts explicitly stated. Do not invent data.`,
             content: String(e.content ?? ""),
           }))
         : [],
+    };
+  }
+
+  async suggestAnnotationFromText(
+    userText: string,
+    sceneTitle: string,
+  ): Promise<{ title: string; short_description: string; description: string; category: string; ai_context: string }> {
+    const result = await sendChatCompletion({
+      model: this.model,
+      messages: [
+        {
+          role: "system",
+          content: `Convert natural language pin descriptions into structured annotation JSON for scene "${sceneTitle}".
+Return JSON: {"title":"","short_description":"","description":"","category":"feature|material|amenity|view|leasing|compliance|cta","ai_context":""}`,
+        },
+        { role: "user", content: userText },
+      ],
+      temperature: 0.15,
+      maxTokens: 1024,
+      responseFormat: { type: "json_object" },
+    });
+    const parsed = JSON.parse(String(result.choices?.[0]?.message?.content ?? "{}"));
+    return {
+      title: String(parsed.title ?? "Feature"),
+      short_description: String(parsed.short_description ?? parsed.title ?? ""),
+      description: String(parsed.description ?? ""),
+      category: String(parsed.category ?? "feature"),
+      ai_context: String(parsed.ai_context ?? userText),
     };
   }
 }

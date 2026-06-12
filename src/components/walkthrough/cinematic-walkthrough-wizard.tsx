@@ -26,6 +26,8 @@ export function CinematicWalkthroughWizard({
   const [loading, setLoading] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [generatingMotion, setGeneratingMotion] = useState(false);
+  const [videoJobs, setVideoJobs] = useState<{ status: string; scene_id: string }[]>([]);
 
   const load = useCallback(async () => {
     const [imgRes, sceneRes, checkRes] = await Promise.all([
@@ -150,8 +152,8 @@ export function CinematicWalkthroughWizard({
     <div className="wt-studio">
       <header className="wt-header">
         <div>
-          <h1 className="text-lg font-semibold">AI Cinematic Walkthrough</h1>
-          <p className="text-sm text-muted-foreground">Upload images → enhance → scroll walkthrough → RAG → publish</p>
+          <h1 className="text-lg font-semibold">Property Walkthrough</h1>
+          <p className="text-sm text-muted-foreground">360° Capture · Upload normal images → AI plan → Veo motion → annotations → publish</p>
         </div>
         <div className="wt-btn-stack sm:flex-row">
           {slug && (
@@ -322,10 +324,39 @@ export function CinematicWalkthroughWizard({
 
         {step === "motion" && (
           <div className="space-y-4">
-            <h2 className="font-medium">Confirm motion per scene</h2>
+            <div className="wt-card flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-medium">Generate motion assets</h2>
+                <p className="text-sm text-muted-foreground">Veo 3.1 Lite creates short motion clips per scene. CSS fallback used until ready.</p>
+              </div>
+              <Button
+                disabled={generatingMotion || !scenes.length}
+                onClick={async () => {
+                  setGeneratingMotion(true);
+                  const res = await fetch("/api/walkthrough/video/generate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ experience_id: experienceId }),
+                  });
+                  const data = await res.json();
+                  setGeneratingMotion(false);
+                  if (!res.ok) return toast.error(data.error ?? "Motion generation failed");
+                  toast.success(`Motion generated ${data.completed}/${data.total} scenes`);
+                  const jobsRes = await fetch(`/api/walkthrough/video/jobs?experienceId=${experienceId}`);
+                  setVideoJobs(await jobsRes.json());
+                  await load();
+                }}
+              >
+                {generatingMotion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                Generate all motion
+              </Button>
+            </div>
             {scenes.map((s) => (
               <div key={s.id} className="wt-card">
-                <p className="mb-2 font-medium">{s.title}</p>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="font-medium">{s.title}</p>
+                  <span className="text-xs text-muted-foreground">{s.video_url ? "Motion ready" : s.scene_status ?? "fallback image"}</span>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {WALKTHROUGH_MOTION_PRESETS.map((m) => (
                     <button
@@ -340,7 +371,12 @@ export function CinematicWalkthroughWizard({
                 </div>
               </div>
             ))}
-            <Button onClick={() => setStep("pins")}>Add info pins</Button>
+            {videoJobs.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Jobs: {videoJobs.filter((j) => j.status === "completed").length} completed · {videoJobs.filter((j) => j.status === "failed").length} failed
+              </p>
+            )}
+            <Button onClick={() => setStep("pins")}>Add annotations</Button>
           </div>
         )}
 
@@ -391,7 +427,8 @@ export function CinematicWalkthroughWizard({
                   ["images_uploaded", "Images uploaded"],
                   ["images_enhanced", "Images enhanced"],
                   ["scenes_created", "Scenes created"],
-                  ["motion_added", "Motion added"],
+                  ["motion_added", "Motion configured"],
+                  ["motion_videos_generated", "Veo motion clips ready"],
                   ["property_rag_added", "Property RAG added"],
                 ].map(([key, label]) => (
                   <div key={key} className="wt-check-item" data-done={checklist[key as keyof WalkthroughChecklist] ? "true" : "false"}>

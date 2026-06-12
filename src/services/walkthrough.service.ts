@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { embeddingService } from "./embedding.service";
 import { openRouterImageService } from "./openrouter-image.service";
+import { openRouterVideoService } from "./openrouter-video.service";
 import { walkthroughPlannerService } from "./walkthrough-planner.service";
 import type { WalkthroughChecklist, WalkthroughScene } from "@/types/cinematic-walkthrough";
 
@@ -16,10 +17,11 @@ export async function ensureWalkthroughChecklist(experienceId: string) {
 
 export async function refreshWalkthroughChecklist(experienceId: string) {
   const admin = createAdminClient();
-  const [{ count: imageCount }, { count: enhancedCount }, { count: sceneCount }, { count: annCount }, { count: ragCount }] = await Promise.all([
+  const [{ count: imageCount }, { count: enhancedCount }, { count: sceneCount }, { count: motionCount }, { count: annCount }, { count: ragCount }] = await Promise.all([
     admin.from("walkthrough_images").select("*", { count: "exact", head: true }).eq("experience_id", experienceId),
     admin.from("walkthrough_images").select("*", { count: "exact", head: true }).eq("experience_id", experienceId).in("enhancement_status", ["approved", "completed", "skipped"]),
     admin.from("walkthrough_scenes").select("*", { count: "exact", head: true }).eq("experience_id", experienceId),
+    admin.from("walkthrough_scenes").select("*", { count: "exact", head: true }).eq("experience_id", experienceId).not("video_url", "is", null),
     admin.from("walkthrough_annotations").select("*", { count: "exact", head: true }).eq("experience_id", experienceId),
     admin.from("knowledge_entries").select("*", { count: "exact", head: true }).eq("property_id", (
       await admin.from("experiences").select("property_id").eq("id", experienceId).single()
@@ -35,6 +37,7 @@ export async function refreshWalkthroughChecklist(experienceId: string) {
     scenes_created: (sceneCount ?? 0) > 0,
     scene_order_approved: (sceneCount ?? 0) > 0,
     motion_added: (sceneCount ?? 0) > 0,
+    motion_videos_generated: (sceneCount ?? 0) > 0 && (motionCount ?? 0) > 0,
     annotations_added: (annCount ?? 0) > 0,
     property_rag_added: (ragCount ?? 0) >= 3,
     ai_tested: false,
@@ -124,16 +127,36 @@ export async function planAndCreateScenes(experienceId: string) {
 
   if (!images?.length) throw new Error("Upload images first");
 
-  const { data: exp } = await admin.from("experiences").select("property_id").eq("id", experienceId).single();
+  const { data: exp } = await admin
+    .from("experiences")
+    .select("property_id, organization_id, properties(name, property_type)")
+    .eq("id", experienceId)
+    .single();
   if (!exp) throw new Error("Experience not found");
 
+  const property = exp.properties as { name?: string; property_type?: string } | null;
   const imageInputs = images.map((img) => ({
     id: img.id,
     url: img.enhanced_image_url ?? img.original_image_url,
     file_name: img.file_name,
   }));
 
-  const { plans, flow_warnings } = await walkthroughPlannerService.planScenes(imageInputs);
+  const { plan, plans, flow_warnings } = await walkthroughPlannerService.planScenes(imageInputs, {
+    propertyType: property?.property_type ?? "residential",
+    propertyName: property?.name,
+  });
+
+  await admin.from("walkthrough_plans").upsert({
+    experience_id: experienceId,
+    property_id: exp.property_id,
+    organization_id: exp.organization_id,
+    tour_title: plan.tour_title,
+    property_type: plan.property_type,
+    flow_warnings: plan.flow_warnings,
+    plan_json: plan,
+    model: process.env.OPENROUTER_PLANNER_MODEL ?? "google/gemini-3.5-flash",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "experience_id" });
 
   await admin.from("walkthrough_scenes").delete().eq("experience_id", experienceId);
 
@@ -150,6 +173,7 @@ export async function planAndCreateScenes(experienceId: string) {
     const { data: scene } = await admin.from("walkthrough_scenes").insert({
       experience_id: experienceId,
       property_id: exp.property_id,
+      organization_id: exp.organization_id,
       image_id: img.id,
       title: plan.title,
       description: plan.description,
@@ -157,27 +181,37 @@ export async function planAndCreateScenes(experienceId: string) {
       caption: plan.caption,
       image_url: imageUrl,
       thumbnail_url: img.thumbnail_url ?? imageUrl,
+      poster_url: img.thumbnail_url ?? imageUrl,
       scene_order: i,
       is_start_scene: i === 0,
       motion_type: plan.suggested_motion,
+      veo_prompt: plan.veo_prompt,
       ai_context: `${plan.description}. ${plan.caption}`,
       quality_notes: plan.quality_notes,
       warnings: plan.warnings,
-      duration: 5,
+      duration: plan.duration ?? 6,
+      timeline_start: i * (plan.duration ?? 6),
+      timeline_end: (i + 1) * (plan.duration ?? 6),
+      scene_status: "planned",
     }).select().single();
 
     if (scene) {
       scenes.push(scene as WalkthroughScene);
-      await admin.from("walkthrough_images").update({ ai_analysis: plan }).eq("id", img.id);
+      await admin.from("walkthrough_images").update({
+        ai_analysis: plan,
+        room_type: plan.room_type,
+        ai_caption: plan.caption,
+        ai_description: plan.description,
+      }).eq("id", img.id);
 
-      for (const ann of plan.suggested_annotations.slice(0, 5)) {
+      for (const ann of plan.suggested_annotations.slice(0, 8)) {
         await admin.from("walkthrough_annotations").insert({
           scene_id: scene.id,
           property_id: exp.property_id,
           experience_id: experienceId,
           title: ann.title,
           short_description: ann.title,
-          category: "room_feature",
+          category: ann.category ?? "feature",
           x_position: ann.x,
           y_position: ann.y,
           rag_enabled: true,
@@ -312,6 +346,105 @@ export async function saveRagEntriesFromChat(
     }
   }
   return saved;
+}
+
+export async function runSceneVideoGeneration(sceneId: string) {
+  const admin = createAdminClient();
+  const { data: scene, error } = await admin
+    .from("walkthrough_scenes")
+    .select("*, experiences(organization_id)")
+    .eq("id", sceneId)
+    .single();
+  if (error || !scene) throw new Error("Scene not found");
+
+  const prompt = scene.veo_prompt ?? `Create a premium real-estate walkthrough motion from this ${scene.room_type ?? "room"} image. Slow forward dolly with subtle parallax. Preserve exact layout and architecture. No people.`;
+  const orgId = scene.organization_id ?? (scene.experiences as { organization_id?: string })?.organization_id;
+
+  const { data: job } = await admin.from("walkthrough_video_jobs").insert({
+    scene_id: sceneId,
+    experience_id: scene.experience_id,
+    property_id: scene.property_id,
+    organization_id: orgId,
+    status: "submitted",
+    model: process.env.OPENROUTER_VIDEO_MODEL ?? "google/veo-3.1-lite",
+    prompt,
+    started_at: new Date().toISOString(),
+  }).select().single();
+
+  await admin.from("walkthrough_scenes").update({ scene_status: "motion_processing" }).eq("id", sceneId);
+
+  try {
+    const { jobId, pollingUrl } = await openRouterVideoService.submitVideoJob(prompt, scene.image_url);
+    await admin.from("walkthrough_video_jobs").update({
+      openrouter_job_id: jobId,
+      polling_url: pollingUrl,
+      status: "processing",
+    }).eq("id", job!.id);
+
+    const result = await openRouterVideoService.pollUntilComplete(pollingUrl);
+    if (result.status === "failed" || !result.unsignedUrls.length) {
+      throw new Error(result.error ?? "No video URL returned");
+    }
+
+    const storedUrl = await openRouterVideoService.downloadAndStore(
+      result.unsignedUrls[0],
+      orgId!,
+      scene.property_id,
+      sceneId,
+    );
+
+    await admin.from("walkthrough_video_jobs").update({
+      status: "completed",
+      unsigned_url: result.unsignedUrls[0],
+      stored_video_url: storedUrl,
+      video_url_720p: storedUrl,
+      video_url_1080p: storedUrl,
+      video_url_mobile: storedUrl,
+      completed_at: new Date().toISOString(),
+    }).eq("id", job!.id);
+
+    await admin.from("walkthrough_scenes").update({
+      video_url: storedUrl,
+      video_url_720p: storedUrl,
+      video_url_1080p: storedUrl,
+      video_url_mobile: storedUrl,
+      scene_status: "motion_ready",
+    }).eq("id", sceneId);
+
+    await refreshWalkthroughChecklist(scene.experience_id);
+    return storedUrl;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Video generation failed";
+    await admin.from("walkthrough_video_jobs").update({
+      status: "failed",
+      error: msg,
+      completed_at: new Date().toISOString(),
+    }).eq("id", job!.id);
+    await admin.from("walkthrough_scenes").update({ scene_status: "fallback_image" }).eq("id", sceneId);
+    throw err;
+  }
+}
+
+export async function generateAllSceneVideos(experienceId: string) {
+  const admin = createAdminClient();
+  const { data: scenes } = await admin
+    .from("walkthrough_scenes")
+    .select("id")
+    .eq("experience_id", experienceId)
+    .is("video_url", null)
+    .order("scene_order");
+
+  const results: { sceneId: string; ok: boolean; error?: string }[] = [];
+  for (const scene of scenes ?? []) {
+    try {
+      await runSceneVideoGeneration(scene.id);
+      results.push({ sceneId: scene.id, ok: true });
+    } catch (e) {
+      results.push({ sceneId: scene.id, ok: false, error: e instanceof Error ? e.message : "failed" });
+    }
+  }
+  await refreshWalkthroughChecklist(experienceId);
+  return results;
 }
 
 export { MAX_IMAGES };

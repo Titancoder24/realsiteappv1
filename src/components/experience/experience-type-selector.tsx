@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Box, Smartphone, Sparkles, Clapperboard, ArrowRight, Film } from "lucide-react";
+import { Camera, Box, Smartphone, Sparkles, Clapperboard, ArrowRight, Footprints } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ExperienceType } from "@/types/domain";
 import "@/styles/scene-studio.css";
@@ -16,12 +16,12 @@ type ExperienceOption = {
   nextLabel: string;
 };
 
-const walkthroughOptions: ExperienceOption[] = [
+const capture360Options: ExperienceOption[] = [
   {
     type: "mobile_360_capture",
     title: "Mobile 360° Capture",
     description: "Guided room-by-room capture with your phone. No 360 camera required.",
-    badge: "Mobile",
+    badge: "Phone",
     icon: Smartphone,
     steps: "Rooms → capture → connect → publish",
     nextLabel: "Start capture",
@@ -35,6 +35,19 @@ const walkthroughOptions: ExperienceOption[] = [
     steps: "Panoramas → rooms → hotspots → publish",
     nextLabel: "Open tour builder",
   },
+  {
+    type: "cinematic_walkthrough",
+    title: "Property Walkthrough",
+    description: "Upload normal property images and generate an AI-guided walkthrough with room navigation, annotations, and property AI chat.",
+    badge: "AI",
+    badgeVariant: "new",
+    icon: Footprints,
+    steps: "Upload → plan → motion → pins → publish",
+    nextLabel: "Start walkthrough",
+  },
+];
+
+const spatialOptions: ExperienceOption[] = [
   {
     type: "worldlabs_splat",
     title: "3D Walkthrough",
@@ -66,17 +79,6 @@ const sceneIntelligenceOption: ExperienceOption = {
   nextLabel: "Open Scene Studio",
 };
 
-const cinematicWalkthroughOption: ExperienceOption = {
-  type: "cinematic_walkthrough",
-  title: "AI Cinematic Walkthrough",
-  description: "Upload any property images — AI enhances, plans scenes, and publishes a scroll-controlled cinematic buyer walkthrough with RAG and CRM.",
-  badge: "Level 1",
-  badgeVariant: "new",
-  icon: Film,
-  steps: "Upload → enhance → scenes → scroll viewer → publish",
-  nextLabel: "Start walkthrough",
-};
-
 function PickerCard({
   opt,
   active,
@@ -91,7 +93,7 @@ function PickerCard({
   onContinue: (type: ExperienceType) => void;
 }) {
   const Icon = opt.icon;
-  const featured = opt.type === "cinematic_walkthrough" || opt.type === "scene_intelligence";
+  const featured = opt.type === "cinematic_walkthrough";
 
   return (
     <div
@@ -139,9 +141,12 @@ export function ExperienceTypeSelector({
   return (
     <div className="experience-picker space-y-6">
       <div>
-        <p className="picker-section-label">Virtual tour engines</p>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {walkthroughOptions.map((opt) => (
+        <p className="picker-section-label">360° Capture</p>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Phone capture, panorama upload, or Property Walkthrough from normal images.
+        </p>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {capture360Options.map((opt) => (
             <PickerCard
               key={opt.type}
               opt={opt}
@@ -155,14 +160,19 @@ export function ExperienceTypeSelector({
       </div>
 
       <div>
-        <p className="picker-section-label">AI cinematic walkthrough</p>
-        <PickerCard
-          opt={cinematicWalkthroughOption}
-          active={selected === cinematicWalkthroughOption.type}
-          disabled={disabled}
-          loading={continuing && selected === cinematicWalkthroughOption.type}
-          onContinue={onContinue}
-        />
+        <p className="picker-section-label">3D spatial engines</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          {spatialOptions.map((opt) => (
+            <PickerCard
+              key={opt.type}
+              opt={opt}
+              active={selected === opt.type}
+              disabled={disabled}
+              loading={continuing && selected === opt.type}
+              onContinue={onContinue}
+            />
+          ))}
+        </div>
       </div>
 
       <div>

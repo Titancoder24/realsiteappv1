@@ -21,6 +21,9 @@ export function MotionSceneViewer({
   annotations = [],
   isMobile = false,
   playing = true,
+  videoUrl,
+  posterUrl,
+  highlightedAnnotationId,
   onProgress,
   onAnnotationClick,
 }: {
@@ -28,6 +31,9 @@ export function MotionSceneViewer({
   annotations?: SceneAnnotationRecord[];
   isMobile?: boolean;
   playing?: boolean;
+  videoUrl?: string | null;
+  posterUrl?: string | null;
+  highlightedAnnotationId?: string | null;
   onProgress?: (progress: number) => void;
   onAnnotationClick?: (ann: SceneAnnotationRecord) => void;
 }) {
@@ -41,9 +47,10 @@ export function MotionSceneViewer({
   const frame = interpolateMotion(keyframes, progress);
   const crop = (isMobile ? scene.mobile_crop : scene.desktop_crop) as CropRect ?? { x: 0, y: 0, width: 1, height: 1 };
   const imageUrl = scene.edited_image_url || scene.image_url;
+  const playbackUrl = videoUrl ?? null;
 
   useEffect(() => {
-    if (!playing) return;
+    if (playbackUrl || !playing) return;
     startRef.current = performance.now();
     const tick = (now: number) => {
       if (!startRef.current) return;
@@ -54,25 +61,37 @@ export function MotionSceneViewer({
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [playing, duration, scene.id, onProgress]);
+  }, [playing, duration, scene.id, onProgress, playbackUrl]);
 
   const imgTransform = `scale(${frame.scale}) translate(${frame.translateX}%, ${frame.translateY}%) rotate(${frame.rotate}deg)`;
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-black">
       <div className="absolute inset-0 flex items-center justify-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={imageUrl}
-          alt={scene.title}
-          className="h-full w-full object-cover transition-none will-change-transform"
-          style={{
-            ...editStyle(scene.edit_config),
-            transform: imgTransform,
-            objectPosition: `${(crop.x + crop.width / 2) * 100}% ${(crop.y + crop.height / 2) * 100}%`,
-          }}
-          draggable={false}
-        />
+        {playbackUrl ? (
+          <video
+            src={playbackUrl}
+            poster={posterUrl ?? imageUrl}
+            className="h-full w-full object-cover"
+            autoPlay={playing}
+            muted
+            loop
+            playsInline
+          />
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={imageUrl}
+            alt={scene.title}
+            className="h-full w-full object-cover transition-none will-change-transform"
+            style={{
+              ...editStyle(scene.edit_config),
+              transform: imgTransform,
+              objectPosition: `${(crop.x + crop.width / 2) * 100}% ${(crop.y + crop.height / 2) * 100}%`,
+            }}
+            draggable={false}
+          />
+        )}
       </div>
 
       {annotations.filter((a) => a.visibility === "public").map((ann) => {
@@ -81,7 +100,7 @@ export function MotionSceneViewer({
           <button
             key={ann.id}
             type="button"
-            className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full border-2 border-white bg-primary/90 shadow-lg hover:scale-110 ${isMobile ? "wt-pin-mobile p-2" : "p-1.5"}`}
+            className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary/90 shadow-lg hover:scale-110 ${highlightedAnnotationId === ann.id ? "scale-125 animate-pulse ring-4 ring-yellow-300" : "animate-pulse"} ${isMobile ? "wt-pin-mobile p-2" : "p-1.5"}`}
             style={{ left: pos.left, top: pos.top }}
             onClick={() => onAnnotationClick?.(ann)}
             aria-label={ann.title}

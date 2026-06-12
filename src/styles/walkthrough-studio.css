@@ -435,3 +435,42 @@
     border-right: none;
   }
 }
+
+.wt-room-strip {
+  position: absolute;
+  top: calc(3.5rem + env(safe-area-inset-top, 0px));
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.5rem 0.75rem;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wt-room-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.wt-room-chip {
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  backdrop-filter: blur(8px);
+}
+
+.wt-room-chip--active {
+  background: rgba(37, 99, 235, 0.9);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.wt-scroll-viewer--walk-mode {
+  overscroll-behavior: contain;
+  touch-action: none;
+}

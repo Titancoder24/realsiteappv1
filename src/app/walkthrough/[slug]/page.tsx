@@ -3,7 +3,8 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { ScrollWalkthroughShell } from "@/components/buyer/scroll-walkthrough-shell";
-import { AIVoicePanel } from "@/components/buyer/ai-voice-panel";
+import { WalkthroughBuyerChat } from "@/components/walkthrough/walkthrough-buyer-chat";
+import type { WalkthroughAICommand } from "@/lib/walkthrough-player-controller";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +30,8 @@ function WalkthroughViewerContent() {
   const [data, setData] = useState<WalkthroughData | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [showAI, setShowAI] = useState(false);
+  const [aiCommand, setAiCommand] = useState<WalkthroughAICommand | null>(null);
+  const [activeSceneId, setActiveSceneId] = useState<string | undefined>();
   const [showLead, setShowLead] = useState(false);
   const [activeAnn, setActiveAnn] = useState<WalkthroughAnnotation | null>(null);
   const [leadForm, setLeadForm] = useState({ name: "", phone: "" });
@@ -109,7 +112,15 @@ function WalkthroughViewerContent() {
         propertyName={data.properties?.name ?? "Property"}
         brandColor={branding?.primary_color}
         logoUrl={branding?.logo_url}
-        onSceneEvent={track}
+        onSceneEvent={(type, payload) => {
+          if (payload?.sceneId) setActiveSceneId(String(payload.sceneId));
+          track(type, payload);
+        }}
+        externalAICommand={aiCommand}
+        onAICommand={(cmd) => {
+          track("ai_navigation_command", { command: cmd.command });
+          if (cmd.command === "OPEN_LEAD_FORM") setShowLead(true);
+        }}
         onAnnotationClick={(ann) => {
           setActiveAnn(ann);
           if (ann.cta_label) track("annotation_cta_clicked", { annotationId: ann.id, title: ann.title });
@@ -127,11 +138,17 @@ function WalkthroughViewerContent() {
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="wt-sheet-body">
-            <AIVoicePanel
-              propertyId={data.property_id}
+          <div className="wt-sheet-body h-[60vh]">
+            <WalkthroughBuyerChat
               organizationId={data.organization_id}
+              propertyId={data.property_id}
+              experienceId={data.id}
               sessionId={sessionId}
+              activeSceneId={activeSceneId}
+              onCommand={(cmd) => {
+                setAiCommand(cmd);
+                setTimeout(() => setAiCommand(null), 100);
+              }}
               onClose={() => setShowAI(false)}
             />
           </div>

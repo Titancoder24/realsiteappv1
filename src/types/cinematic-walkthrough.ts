@@ -44,6 +44,7 @@ export interface WalkthroughScene {
   id: string;
   experience_id: string;
   property_id: string;
+  organization_id?: string | null;
   image_id?: string | null;
   title: string;
   description?: string | null;
@@ -52,11 +53,20 @@ export interface WalkthroughScene {
   image_url: string;
   edited_image_url?: string | null;
   thumbnail_url?: string | null;
+  poster_url?: string | null;
+  video_url?: string | null;
+  video_url_720p?: string | null;
+  video_url_1080p?: string | null;
+  video_url_mobile?: string | null;
+  veo_prompt?: string | null;
   scene_order: number;
   is_start_scene: boolean;
   motion_type: WalkthroughMotionType;
   motion_config?: Record<string, unknown>;
   duration: number;
+  timeline_start?: number | null;
+  timeline_end?: number | null;
+  scene_status?: string | null;
   edit_config?: Record<string, unknown>;
   mobile_crop?: { x: number; y: number; width: number; height: number };
   desktop_crop?: { x: number; y: number; width: number; height: number };
@@ -78,6 +88,8 @@ export interface WalkthroughAnnotation {
   x_position: number;
   y_position: number;
   visibility: string;
+  pin_style?: string | null;
+  icon_type?: string | null;
   cta_type?: string | null;
   cta_label?: string | null;
   media_url?: string | null;
@@ -95,12 +107,25 @@ export interface WalkthroughChecklist {
   scenes_created: boolean;
   scene_order_approved: boolean;
   motion_added: boolean;
+  motion_videos_generated?: boolean;
   annotations_added: boolean;
   property_rag_added: boolean;
   ai_tested: boolean;
   viewer_previewed: boolean;
   ready_to_publish: boolean;
   warnings: string[];
+}
+
+export interface WalkthroughVideoJob {
+  id: string;
+  scene_id: string;
+  experience_id: string;
+  status: string;
+  model: string;
+  prompt: string;
+  stored_video_url?: string | null;
+  error?: string | null;
+  created_at?: string;
 }
 
 export interface ScenePlanResult {
@@ -111,8 +136,10 @@ export interface ScenePlanResult {
   caption: string;
   suggested_motion: WalkthroughMotionType;
   suggested_order: number;
+  duration?: number;
+  veo_prompt?: string;
   important_objects: string[];
-  suggested_annotations: { title: string; x: number; y: number }[];
+  suggested_annotations: { title: string; x: number; y: number; category?: string }[];
   quality_notes: string;
   include: boolean;
   warnings: string[];
@@ -138,15 +165,15 @@ export const WALKTHROUGH_MOTION_PRESETS: { type: WalkthroughMotionType; label: s
 ];
 
 export const WALKTHROUGH_WIZARD_STEPS = [
-  { id: "upload", label: "Add property images" },
-  { id: "enhance", label: "Improve image quality" },
-  { id: "scenes", label: "Create scenes" },
+  { id: "upload", label: "Upload property images" },
+  { id: "enhance", label: "Enhance image quality" },
+  { id: "scenes", label: "Analyze & plan scenes" },
   { id: "arrange", label: "Arrange walkthrough" },
-  { id: "motion", label: "Confirm motion" },
-  { id: "pins", label: "Add info pins" },
-  { id: "rag", label: "Add property details" },
-  { id: "preview", label: "Preview" },
-  { id: "publish", label: "Publish" },
+  { id: "motion", label: "Generate motion assets" },
+  { id: "pins", label: "Add annotations" },
+  { id: "rag", label: "Add property knowledge" },
+  { id: "preview", label: "Test AI & preview" },
+  { id: "publish", label: "Publish walkthrough" },
 ] as const;
 
 export type WalkthroughWizardStep = (typeof WALKTHROUGH_WIZARD_STEPS)[number]["id"];

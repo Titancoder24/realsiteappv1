@@ -84,7 +84,7 @@ export default function ExperiencesPage() {
                 <div className="min-w-0">
                   <CardTitle className="text-base truncate">{e.properties?.name ?? "Property"}</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    {e.type === "cinematic_walkthrough" ? "AI Cinematic Walkthrough" : e.type === "scene_intelligence" ? "Scene Intelligence Studio" : e.type === "immersive_world" ? "Immersive World" : is3d(e.type) ? "3D Walkthrough" : "360° Panorama Tour"}
+                    {e.type === "cinematic_walkthrough" ? "Property Walkthrough" : e.type === "scene_intelligence" ? "Scene Intelligence Studio" : e.type === "immersive_world" ? "Immersive World" : is3d(e.type) ? "3D Walkthrough" : "360° Panorama Tour"}
                   </p>
                 </div>
               </div>
