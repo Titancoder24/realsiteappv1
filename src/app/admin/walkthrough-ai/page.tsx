@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Cloud, Loader2, Router, Save, Sparkles, Wand2 } from "lucide-react";
+import { Cloud, Loader2, Play, Router, Save, Sparkles, Wand2 } from "lucide-react";
 
 interface WalkthroughAIConfig {
   provider: "openrouter" | "vertex";
@@ -23,12 +23,27 @@ interface WalkthroughAIConfig {
   };
 }
 
+type PipelineTestResult = {
+  ok: boolean;
+  provider: string;
+  planner: { ok: boolean; model?: string; latency_ms?: number; error?: string };
+  video: { ok: boolean; model?: string; operation?: string; error?: string };
+  config: {
+    vertex_configured: boolean;
+    project_id: string;
+    location: string;
+    openrouter_configured: boolean;
+  };
+};
+
 export default function WalkthroughAIAdminPage() {
   const [config, setConfig] = useState<WalkthroughAIConfig | null>(null);
   const [vertexKey, setVertexKey] = useState("");
   const [projectId, setProjectId] = useState("");
   const [location, setLocation] = useState("us-central1");
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [pipelineTest, setPipelineTest] = useState<PipelineTestResult | null>(null);
 
   function load() {
     fetch("/api/admin/walkthrough-ai")
@@ -88,6 +103,43 @@ export default function WalkthroughAIAdminPage() {
     }
   }
 
+  async function testPipeline() {
+    setTesting(true);
+    setPipelineTest(null);
+    try {
+      const res = await fetch("/api/admin/walkthrough-ai/test", { method: "POST" });
+      const data = await res.json();
+      setPipelineTest(data);
+      if (data.ok) {
+        toast.success("Pipeline healthy — planner and video submit working");
+      } else {
+        toast.error("Pipeline test failed — check details below");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Pipeline test failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function saveAndActivateVertex() {
+    try {
+      await patch({
+        provider: "vertex",
+        vertex_api_key: vertexKey || undefined,
+        vertex_project_id: projectId,
+        vertex_location: location,
+        reason: "Saved and activated Vertex AI for walkthrough pipeline",
+      });
+      toast.success("Vertex saved and activated");
+      setVertexKey("");
+      load();
+      await testPipeline();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save");
+    }
+  }
+
   if (!config) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">
@@ -101,7 +153,7 @@ export default function WalkthroughAIAdminPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Property Walkthrough AI</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Configure Gemini 3.5 Flash (scene planning) and Veo 3.1 Lite (motion) for the 360° Capture walkthrough pipeline.
+          Configure Gemini (scene planning) and Veo 3.1 Lite (motion) for the Property Walkthrough pipeline.
         </p>
       </div>
 
@@ -199,7 +251,7 @@ export default function WalkthroughAIAdminPage() {
             <Button
               variant="outline"
               disabled={saving}
-              onClick={() => setProvider("vertex")}
+              onClick={saveAndActivateVertex}
               className="gap-2"
             >
               Save & activate Vertex
@@ -228,11 +280,43 @@ export default function WalkthroughAIAdminPage() {
         <Card id="pipeline">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2"><Wand2 className="h-4 w-4" /> Pipeline</CardTitle>
+            <CardDescription>Test scene planning and Veo motion submit against live credentials.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p className="flex items-start gap-2"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span><strong className="text-foreground">Analyze & plan scenes</strong> — Gemini 3.5 Flash vision</span></p>
-            <p className="flex items-start gap-2"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span><strong className="text-foreground">Generate motion</strong> — Veo 3.1 Lite image-to-video</span></p>
-            <p className="flex items-start gap-2"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span><strong className="text-foreground">Fallback</strong> — Scenes created from uploads if AI fails</span></p>
+          <CardContent className="space-y-4 text-sm">
+            <div className="space-y-2 text-muted-foreground">
+              <p className="flex items-start gap-2"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span><strong className="text-foreground">Analyze & plan scenes</strong> — Gemini vision planner</span></p>
+              <p className="flex items-start gap-2"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span><strong className="text-foreground">Generate motion</strong> — Veo 3.1 Lite image-to-video</span></p>
+              <p className="flex items-start gap-2"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span><strong className="text-foreground">Fallback</strong> — Scenes from uploads if AI fails</span></p>
+            </div>
+
+            <Button onClick={testPipeline} disabled={testing || saving} className="w-full gap-2">
+              {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Test pipeline
+            </Button>
+
+            {pipelineTest && (
+              <div className="space-y-2 rounded-lg border bg-muted/30 p-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Provider</span>
+                  <Badge variant={pipelineTest.ok ? "success" : "destructive"}>{pipelineTest.provider}</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Planner {pipelineTest.planner.model && `(${pipelineTest.planner.model})`}</span>
+                  <span className={pipelineTest.planner.ok ? "text-emerald-700" : "text-destructive"}>
+                    {pipelineTest.planner.ok ? `OK${pipelineTest.planner.latency_ms ? ` · ${pipelineTest.planner.latency_ms}ms` : ""}` : pipelineTest.planner.error ?? "Failed"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Video submit {pipelineTest.video.model && `(${pipelineTest.video.model})`}</span>
+                  <span className={pipelineTest.video.ok ? "text-emerald-700" : "text-destructive"}>
+                    {pipelineTest.video.ok ? "Queued" : pipelineTest.video.error ?? "Failed"}
+                  </span>
+                </div>
+                {pipelineTest.config.project_id && (
+                  <p className="text-muted-foreground">Project: {pipelineTest.config.project_id}</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

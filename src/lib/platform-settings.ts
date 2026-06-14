@@ -49,8 +49,8 @@ export async function getWalkthroughAIProvider(): Promise<WalkthroughAIProvider>
 
 export async function getVertexAIConfig(): Promise<VertexAIConfig> {
   return getSetting<VertexAIConfig>("vertex_ai_config", {
-    planner_model: "gemini-3.5-flash",
-    video_model: "veo-3.1-lite-generate-001",
+    planner_model: "gemini-2.5-flash",
+    video_model: "veo-3.1-lite-generate-preview",
     location: "us-central1",
   });
 }

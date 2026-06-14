@@ -454,7 +454,7 @@ export async function queueSceneVideoJob(sceneId: string) {
   const provider = await getWalkthroughAIProvider();
   const vertexCfg = await getVertexAIConfig();
   const videoModel = provider === "vertex"
-    ? (vertexCfg.video_model ?? "veo-3.1-lite-generate-001")
+    ? (vertexCfg.video_model ?? "veo-3.1-lite-generate-preview")
     : (process.env.OPENROUTER_VIDEO_MODEL ?? "google/veo-3.1-lite");
 
   const { data: job } = await admin.from("walkthrough_video_jobs").insert({

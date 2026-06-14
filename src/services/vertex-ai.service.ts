@@ -1,9 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
 import { getVertexAIConfig } from "@/lib/platform-settings";
-import { env } from "@/lib/env";
 
-const DEFAULT_PLANNER = "gemini-3.5-flash";
-const DEFAULT_VIDEO = "veo-3.1-lite-generate-001";
+export const VERTEX_PLANNER_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash-001",
+  "gemini-3.1-flash-lite",
+] as const;
+
+export const VERTEX_VIDEO_MODEL = "veo-3.1-lite-generate-preview";
 
 async function getClient() {
   const cfg = await getVertexAIConfig();
@@ -19,8 +23,12 @@ async function getClient() {
     });
   }
 
-  // Vertex AI Express mode (API key only — matches Google Cloud console keys)
   return new GoogleGenAI({ vertexai: true, apiKey });
+}
+
+function plannerModels(preferred?: string): string[] {
+  const models = preferred ? [preferred, ...VERTEX_PLANNER_MODELS] : [...VERTEX_PLANNER_MODELS];
+  return [...new Set(models)];
 }
 
 export class VertexAIService {
@@ -30,7 +38,6 @@ export class VertexAIService {
   ): Promise<string> {
     const cfg = await getVertexAIConfig();
     const ai = await getClient();
-    const model = cfg.planner_model ?? DEFAULT_PLANNER;
 
     const parts: Array<{ text?: string; inlineData?: { data: string; mimeType: string } }> = [
       { text: options?.promptText ?? "Analyze property images and return walkthrough plan JSON." },
@@ -52,25 +59,34 @@ export class VertexAIService {
       }
     }
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: [{ role: "user", parts }],
-      config: {
-        responseMimeType: "application/json",
-        maxOutputTokens: 4096,
-        temperature: 0.2,
-      },
-    });
+    let lastError: Error | null = null;
+    for (const model of plannerModels(cfg.planner_model)) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [{ role: "user", parts }],
+          config: {
+            responseMimeType: "application/json",
+            maxOutputTokens: 4096,
+            temperature: 0.2,
+          },
+        });
 
-    const text = response.text;
-    if (!text?.trim()) throw new Error("Vertex AI returned empty planner response");
-    return text;
+        const text = response.text;
+        if (!text?.trim()) throw new Error("Vertex AI returned empty planner response");
+        return text;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+
+    throw lastError ?? new Error("Vertex AI planner failed");
   }
 
   async submitVideoJob(prompt: string, imageUrl?: string): Promise<{ operationName: string }> {
     const cfg = await getVertexAIConfig();
     const ai = await getClient();
-    const model = cfg.video_model ?? DEFAULT_VIDEO;
+    const model = cfg.video_model ?? VERTEX_VIDEO_MODEL;
 
     let imagePart: { imageBytes: string; mimeType: string } | undefined;
     if (imageUrl) {
@@ -93,6 +109,7 @@ export class VertexAIService {
         numberOfVideos: 1,
         aspectRatio: "16:9",
         durationSeconds: 6,
+        resolution: "720p",
       },
     });
 

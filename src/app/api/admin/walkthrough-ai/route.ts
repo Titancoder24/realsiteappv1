@@ -7,6 +7,7 @@ import {
   setPlatformSetting,
   clearPlatformSettingsCache,
   type WalkthroughAIProvider,
+  type VertexAIConfig,
 } from "@/lib/platform-settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
@@ -27,8 +28,8 @@ export async function GET() {
       },
       vertex: {
         configured: hasVertexKey,
-        planner_model: vertex.planner_model ?? "gemini-3.5-flash",
-        video_model: vertex.video_model ?? "veo-3.1-lite-generate-001",
+        planner_model: vertex.planner_model ?? "gemini-2.5-flash",
+        video_model: vertex.video_model ?? "veo-3.1-lite-generate-preview",
         location: vertex.location ?? "us-central1",
         project_id: vertex.project_id ?? "",
         api_key_set: hasVertexKey,
@@ -62,8 +63,8 @@ export async function PATCH(req: Request) {
       api_key: body.vertex_api_key?.trim() || existing.api_key,
       project_id: body.vertex_project_id !== undefined ? body.vertex_project_id.trim() : existing.project_id,
       location: body.vertex_location?.trim() || existing.location || "us-central1",
-      planner_model: body.vertex_planner_model?.trim() || existing.planner_model || "gemini-3.5-flash",
-      video_model: body.vertex_video_model?.trim() || existing.video_model || "veo-3.1-lite-generate-001",
+      planner_model: body.vertex_planner_model?.trim() || existing.planner_model || "gemini-2.5-flash",
+      video_model: body.vertex_video_model?.trim() || existing.video_model || "veo-3.1-lite-generate-preview",
     };
 
     const vertexTouched =
@@ -89,6 +90,20 @@ export async function PATCH(req: Request) {
 
     const provider = body.provider ?? (await getWalkthroughAIProvider());
     clearPlatformSettingsCache();
-    return NextResponse.json({ ok: true, provider, vertex: nextVertex });
+
+    const safeVertex: VertexAIConfig = {
+      ...nextVertex,
+      api_key: nextVertex.api_key ? `${nextVertex.api_key.slice(0, 6)}…` : undefined,
+    };
+
+    return NextResponse.json({
+      ok: true,
+      provider,
+      vertex: {
+        ...safeVertex,
+        api_key_set: Boolean(nextVertex.api_key),
+        configured: Boolean(nextVertex.api_key),
+      },
+    });
   }, "platform_admin");
 }
