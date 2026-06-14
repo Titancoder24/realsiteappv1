@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { withAuth, jsonError } from "@/lib/api-utils";
 import { mediaService } from "@/services/media.service";
 import { ensureWalkthroughChecklist, MAX_IMAGES, refreshWalkthroughChecklist } from "@/services/walkthrough.service";
+import { parseImageDimensions } from "@/lib/image-dimensions";
 
 export async function GET(req: Request) {
   return withAuth(async () => {
@@ -40,6 +41,8 @@ export async function POST(req: Request) {
     if ((count ?? 0) >= MAX_IMAGES) return jsonError(`Maximum ${MAX_IMAGES} images per walkthrough`, 400);
 
     const asset = await mediaService.uploadToStorage(file, profile.organization_id, propertyId);
+    const fileBuffer = await file.arrayBuffer();
+    const dims = parseImageDimensions(fileBuffer, file.type);
     await ensureWalkthroughChecklist(experienceId);
 
     const { data, error } = await admin.from("walkthrough_images").insert({
@@ -52,6 +55,8 @@ export async function POST(req: Request) {
       file_name: file.name,
       file_size: file.size,
       mime_type: file.type,
+      width: dims?.width ?? null,
+      height: dims?.height ?? null,
       upload_status: "ready",
       enhancement_status: "pending",
       sort_order: count ?? 0,

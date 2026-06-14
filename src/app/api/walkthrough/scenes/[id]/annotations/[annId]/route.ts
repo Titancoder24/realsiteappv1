@@ -13,6 +13,8 @@ const patchSchema = z.object({
   y_position: z.coerce.number().min(0).max(1).optional(),
   visibility: z.enum(["public", "internal"]).optional(),
   cta_label: z.string().optional(),
+  pin_style: z.string().optional(),
+  icon_type: z.string().optional(),
   ai_context: z.string().optional(),
   rag_enabled: z.boolean().optional(),
   crm_tracking_enabled: z.boolean().optional(),

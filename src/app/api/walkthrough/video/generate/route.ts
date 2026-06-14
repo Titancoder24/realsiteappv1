@@ -7,14 +7,19 @@ export const maxDuration = 10;
 export async function POST(req: Request) {
   return withAuth(async () => {
     const body = await req.json();
-    const { experience_id, scene_id, wait } = body as { experience_id?: string; scene_id?: string; wait?: boolean };
+    const { experience_id, scene_id, wait, force } = body as {
+      experience_id?: string;
+      scene_id?: string;
+      wait?: boolean;
+      force?: boolean;
+    };
 
     if (scene_id) {
       if (wait) {
         const url = await runSceneVideoGeneration(scene_id);
         return NextResponse.json({ ok: true, scene_id, video_url: url });
       }
-      const queued = await queueSceneVideoJob(scene_id);
+      const queued = await queueSceneVideoJob(scene_id, { force });
       return NextResponse.json({ ok: true, ...queued });
     }
 

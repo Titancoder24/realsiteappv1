@@ -1,3 +1,4 @@
+import { aspectRatioFromDimensions, fetchImageDimensions } from "@/lib/image-dimensions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logApiUsage, type ApiProvider } from "@/lib/api-usage-logger";
 import { embeddingService } from "./embedding.service";
@@ -11,6 +12,48 @@ import type { WalkthroughChecklist, WalkthroughScene } from "@/types/cinematic-w
 
 const MAX_IMAGES = 35;
 
+async function resolveSceneAspectRatio(sceneId: string, imageUrl?: string | null): Promise<"16:9" | "9:16"> {
+  const admin = createAdminClient();
+  const { data: scene } = await admin
+    .from("walkthrough_scenes")
+    .select("image_id")
+    .eq("id", sceneId)
+    .single();
+
+  if (scene?.image_id) {
+    const { data: img } = await admin
+      .from("walkthrough_images")
+      .select("width, height")
+      .eq("id", scene.image_id)
+      .single();
+    if (img?.width && img?.height) return aspectRatioFromDimensions(img.width, img.height);
+  }
+
+  if (imageUrl) {
+    const dims = await fetchImageDimensions(imageUrl);
+    if (dims) return aspectRatioFromDimensions(dims.width, dims.height);
+  }
+
+  return "16:9";
+}
+
+function applyStoredVideoUrls(aspectRatio: "16:9" | "9:16", storedUrl: string) {
+  if (aspectRatio === "9:16") {
+    return {
+      video_url: storedUrl,
+      video_url_720p: storedUrl,
+      video_url_1080p: storedUrl,
+      video_url_mobile: storedUrl,
+    };
+  }
+  return {
+    video_url: storedUrl,
+    video_url_720p: storedUrl,
+    video_url_1080p: storedUrl,
+    video_url_mobile: storedUrl,
+  };
+}
+
 export async function ensureWalkthroughChecklist(experienceId: string) {
   const admin = createAdminClient();
   const { data } = await admin.from("walkthrough_checklists").select("*").eq("experience_id", experienceId).maybeSingle();
@@ -21,6 +64,12 @@ export async function ensureWalkthroughChecklist(experienceId: string) {
 
 export async function refreshWalkthroughChecklist(experienceId: string) {
   const admin = createAdminClient();
+  const { data: existingChecklist } = await admin
+    .from("walkthrough_checklists")
+    .select("ai_tested, viewer_previewed")
+    .eq("experience_id", experienceId)
+    .maybeSingle();
+
   const [{ count: imageCount }, { count: enhancedCount }, { count: sceneCount }, { count: motionCount }, { count: annCount }, { count: ragCount }] = await Promise.all([
     admin.from("walkthrough_images").select("*", { count: "exact", head: true }).eq("experience_id", experienceId),
     admin.from("walkthrough_images").select("*", { count: "exact", head: true }).eq("experience_id", experienceId).in("enhancement_status", ["approved", "completed", "skipped"]),
@@ -34,22 +83,25 @@ export async function refreshWalkthroughChecklist(experienceId: string) {
 
   const { data: exp } = await admin.from("experiences").select("status").eq("id", experienceId).single();
   const warnings: string[] = [];
+  const hasMotionVideos = (sceneCount ?? 0) > 0 && (motionCount ?? 0) > 0;
+  const motionFallbackOk = (sceneCount ?? 0) > 0;
 
   const checklist = {
     images_uploaded: (imageCount ?? 0) > 0,
     images_enhanced: (imageCount ?? 0) > 0 && (enhancedCount ?? 0) >= (imageCount ?? 0),
     scenes_created: (sceneCount ?? 0) > 0,
     scene_order_approved: (sceneCount ?? 0) > 0,
-    motion_added: (sceneCount ?? 0) > 0,
-    motion_videos_generated: (sceneCount ?? 0) > 0 && (motionCount ?? 0) > 0,
+    motion_added: motionFallbackOk,
+    motion_videos_generated: hasMotionVideos,
     annotations_added: (annCount ?? 0) > 0,
     property_rag_added: (ragCount ?? 0) >= 3,
-    ai_tested: false,
-    viewer_previewed: false,
+    ai_tested: existingChecklist?.ai_tested ?? false,
+    viewer_previewed: existingChecklist?.viewer_previewed ?? false,
     ready_to_publish:
       (imageCount ?? 0) > 0 &&
       (sceneCount ?? 0) > 0 &&
-      (ragCount ?? 0) >= 1 &&
+      (ragCount ?? 0) >= 3 &&
+      (hasMotionVideos || motionFallbackOk) &&
       exp?.status !== "published",
     warnings,
     updated_at: new Date().toISOString(),
@@ -425,7 +477,7 @@ export async function saveRagEntriesFromChat(
   return saved;
 }
 
-export async function queueSceneVideoJob(sceneId: string) {
+export async function queueSceneVideoJob(sceneId: string, options?: { force?: boolean }) {
   const admin = createAdminClient();
   const { data: scene, error } = await admin
     .from("walkthrough_scenes")
@@ -433,10 +485,24 @@ export async function queueSceneVideoJob(sceneId: string) {
     .eq("id", sceneId)
     .single();
   if (error || !scene) throw new Error("Scene not found");
-  if (scene.video_url) return { sceneId, status: "completed" as const, video_url: scene.video_url };
+  if (scene.video_url && !options?.force) return { sceneId, status: "completed" as const, video_url: scene.video_url };
+
+  if (options?.force) {
+    await admin.from("walkthrough_scenes").update({
+      video_url: null,
+      video_url_720p: null,
+      video_url_1080p: null,
+      video_url_mobile: null,
+      scene_status: "draft",
+    }).eq("id", sceneId);
+    await admin.from("walkthrough_video_jobs").update({ status: "failed", error: "superseded by regenerate" })
+      .eq("scene_id", sceneId)
+      .in("status", ["queued", "submitted", "processing"]);
+  }
 
   const prompt = scene.veo_prompt ?? `Create a premium real-estate walkthrough motion from this ${scene.room_type ?? "room"} image. Slow forward dolly with subtle parallax. Preserve exact layout and architecture. No people.`;
   const orgId = scene.organization_id ?? (scene.experiences as { organization_id?: string })?.organization_id;
+  const aspectRatio = await resolveSceneAspectRatio(sceneId, scene.image_url);
 
   const { data: existing } = await admin
     .from("walkthrough_video_jobs")
@@ -465,6 +531,7 @@ export async function queueSceneVideoJob(sceneId: string) {
     status: "queued",
     model: videoModel,
     prompt,
+    aspect_ratio: aspectRatio,
     started_at: new Date().toISOString(),
   }).select().single();
 
@@ -485,10 +552,12 @@ async function ensureVideoJobSubmitted(jobId: string) {
 
   const { data: sceneRow } = await admin.from("walkthrough_scenes").select("image_url").eq("id", job.scene_id).single();
   const imageUrl = sceneRow?.image_url;
+  const aspectRatio = (job.aspect_ratio as "16:9" | "9:16" | null)
+    ?? await resolveSceneAspectRatio(job.scene_id, imageUrl);
   const provider = await getWalkthroughAIProvider();
 
   if (provider === "vertex") {
-    const { operationName } = await vertexAIService.submitVideoJob(job.prompt, imageUrl);
+    const { operationName } = await vertexAIService.submitVideoJob(job.prompt, imageUrl, { aspectRatio });
     await logApiUsage({
       provider: "vertex",
       operation: "video_generate",
@@ -506,7 +575,7 @@ async function ensureVideoJobSubmitted(jobId: string) {
     return updated ?? job;
   }
 
-  const { jobId: openrouterJobId, pollingUrl } = await openRouterVideoService.submitVideoJob(job.prompt, imageUrl);
+  const { jobId: openrouterJobId, pollingUrl } = await openRouterVideoService.submitVideoJob(job.prompt, imageUrl, { aspectRatio });
   await logApiUsage({
     provider: "openrouter",
     operation: "video_generate",
@@ -587,21 +656,18 @@ export async function pollSceneVideoJob(jobId: string) {
 
     const buffer = await vertexAIService.downloadVideo(result.videoUri!);
     const storedUrl = await storeVideoBuffer(buffer, orgId!, scene.property_id, scene.id);
+    const aspectRatio = (job.aspect_ratio as "16:9" | "9:16" | null) ?? "16:9";
+    const urls = applyStoredVideoUrls(aspectRatio, storedUrl);
 
     await admin.from("walkthrough_video_jobs").update({
       status: "completed",
       stored_video_url: storedUrl,
-      video_url_720p: storedUrl,
-      video_url_1080p: storedUrl,
-      video_url_mobile: storedUrl,
+      ...urls,
       completed_at: new Date().toISOString(),
     }).eq("id", jobId);
 
     await admin.from("walkthrough_scenes").update({
-      video_url: storedUrl,
-      video_url_720p: storedUrl,
-      video_url_1080p: storedUrl,
-      video_url_mobile: storedUrl,
+      ...urls,
       scene_status: "motion_ready",
     }).eq("id", scene.id);
 
@@ -619,21 +685,19 @@ export async function pollSceneVideoJob(jobId: string) {
       scene.id,
     );
 
+    const aspectRatio = (job.aspect_ratio as "16:9" | "9:16" | null) ?? "16:9";
+    const urls = applyStoredVideoUrls(aspectRatio, storedUrl);
+
     await admin.from("walkthrough_video_jobs").update({
       status: "completed",
       unsigned_url: result.unsignedUrls[0],
       stored_video_url: storedUrl,
-      video_url_720p: storedUrl,
-      video_url_1080p: storedUrl,
-      video_url_mobile: storedUrl,
+      ...urls,
       completed_at: new Date().toISOString(),
     }).eq("id", jobId);
 
     await admin.from("walkthrough_scenes").update({
-      video_url: storedUrl,
-      video_url_720p: storedUrl,
-      video_url_1080p: storedUrl,
-      video_url_mobile: storedUrl,
+      ...urls,
       scene_status: "motion_ready",
     }).eq("id", scene.id);
 

@@ -31,8 +31,17 @@ export function CinematicWalkthroughWizard({
   const [videoJobs, setVideoJobs] = useState<{ status: string; scene_id: string }[]>([]);
   const [activePinSceneId, setActivePinSceneId] = useState<string | null>(null);
   const [aiTestReply, setAiTestReply] = useState<string | null>(null);
+  const [aiTestCommand, setAiTestCommand] = useState<string | null>(null);
   const [aiTesting, setAiTesting] = useState(false);
+  const [regeneratingSceneId, setRegeneratingSceneId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const canPublish = Boolean(
+    checklist?.images_uploaded &&
+    checklist?.scenes_created &&
+    checklist?.property_rag_added &&
+    checklist?.motion_added,
+  );
 
   const load = useCallback(async () => {
     const [imgRes, sceneRes, checkRes, jobsRes] = await Promise.all([
@@ -216,10 +225,47 @@ export function CinematicWalkthroughWizard({
   }
 
   async function publish() {
+    if (!canPublish) {
+      return toast.error("Complete the readiness checklist before publishing");
+    }
     const res = await fetch(`/api/experiences/${experienceId}/publish`, { method: "POST" });
     const data = await res.json();
     if (!res.ok) return toast.error(data.error);
     toast.success(`Published: ${data.publishedUrl}`);
+    await load();
+  }
+
+  async function markChecklistFlag(flag: "ai_tested" | "viewer_previewed") {
+    await fetch(`/api/walkthrough/checklist/${experienceId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [flag]: true }),
+    });
+    await load();
+  }
+
+  async function updateSceneVeoPrompt(sceneId: string, veoPrompt: string) {
+    await fetch(`/api/walkthrough/scenes/${sceneId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ veo_prompt: veoPrompt }),
+    });
+    setScenes((prev) => prev.map((s) => (s.id === sceneId ? { ...s, veo_prompt: veoPrompt } : s)));
+  }
+
+  async function regenerateSceneMotion(sceneId: string) {
+    setRegeneratingSceneId(sceneId);
+    const res = await fetch("/api/walkthrough/video/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scene_id: sceneId, force: true }),
+    });
+    const data = await res.json();
+    setRegeneratingSceneId(null);
+    if (!res.ok) return toast.error(data.error ?? "Regenerate failed");
+    toast.success("Motion regeneration queued");
+    setGeneratingMotion(true);
+    startVideoPolling();
     await load();
   }
 
@@ -240,7 +286,7 @@ export function CinematicWalkthroughWizard({
               </a>
             </Button>
           )}
-          <Button size="sm" className="min-h-[44px]" onClick={publish}>Publish</Button>
+          <Button size="sm" className="min-h-[44px]" onClick={publish} disabled={!canPublish}>Publish</Button>
         </div>
       </header>
 
@@ -418,7 +464,7 @@ export function CinematicWalkthroughWizard({
             <div className="wt-card flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-medium">Generate motion assets</h2>
-                <p className="text-sm text-muted-foreground">Veo 3.1 Lite creates short motion clips per scene. CSS fallback used until ready.</p>
+                <p className="text-sm text-muted-foreground">Veo 3.1 Lite creates short motion clips per scene (16:9 landscape or 9:16 portrait). CSS fallback used until ready.</p>
               </div>
               <Button
                 disabled={generatingMotion || !scenes.length}
@@ -456,6 +502,28 @@ export function CinematicWalkthroughWizard({
                 {s.video_url && (
                   <video src={s.video_url} className="mb-2 w-full rounded-md" controls muted playsInline />
                 )}
+                <div className="mb-2">
+                  <label className="text-xs font-medium text-muted-foreground">Veo motion prompt</label>
+                  <textarea
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-xs"
+                    rows={3}
+                    value={s.veo_prompt ?? ""}
+                    onChange={(e) => setScenes((prev) => prev.map((sc) => sc.id === s.id ? { ...sc, veo_prompt: e.target.value } : sc))}
+                    onBlur={(e) => updateSceneVeoPrompt(s.id, e.target.value)}
+                    placeholder="Conservative property-safe motion prompt…"
+                  />
+                </div>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={regeneratingSceneId === s.id || generatingMotion}
+                    onClick={() => regenerateSceneMotion(s.id)}
+                  >
+                    {regeneratingSceneId === s.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                    Regenerate motion
+                  </Button>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {WALKTHROUGH_MOTION_PRESETS.map((m) => (
                     <button
@@ -541,10 +609,14 @@ export function CinematicWalkthroughWizard({
               <h2 className="font-medium">Test AI & preview</h2>
               <p className="text-sm text-muted-foreground">Scroll through the cinematic walkthrough as buyers will see it, and test the AI assistant.</p>
               {slug && (
-                <Button className="mt-4" asChild>
-                  <a href={`/walkthrough/${slug}?preview=1`} target="_blank" rel="noreferrer">
-                    <ExternalLink className="mr-2 h-4 w-4" /> Open preview
-                  </a>
+                <Button
+                  className="mt-4"
+                  onClick={async () => {
+                    window.open(`/walkthrough/${slug}?preview=1`, "_blank", "noopener,noreferrer");
+                    await markChecklistFlag("viewer_previewed");
+                  }}
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" /> Open preview
                 </Button>
               )}
             </div>
@@ -574,6 +646,8 @@ export function CinematicWalkthroughWizard({
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error ?? "AI test failed");
                       setAiTestReply(data.answer ?? data.reply ?? "No response");
+                      setAiTestCommand(data.command?.command ?? null);
+                      await markChecklistFlag("ai_tested");
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : "AI test failed");
                     } finally {
@@ -584,7 +658,12 @@ export function CinematicWalkthroughWizard({
                 {aiTesting && <Loader2 className="h-4 w-4 animate-spin self-center" />}
               </div>
               {aiTestReply && (
-                <p className="rounded-md bg-muted px-3 py-2 text-sm">{aiTestReply}</p>
+                <div className="space-y-1">
+                  <p className="rounded-md bg-muted px-3 py-2 text-sm">{aiTestReply}</p>
+                  {aiTestCommand && aiTestCommand !== "NONE" && (
+                    <p className="text-xs text-muted-foreground">AI command: {aiTestCommand}</p>
+                  )}
+                </div>
               )}
             </div>
             {checklist && (
@@ -596,7 +675,11 @@ export function CinematicWalkthroughWizard({
                   ["scenes_created", "Scenes created"],
                   ["motion_added", "Motion configured"],
                   ["motion_videos_generated", "Veo motion clips ready"],
-                  ["property_rag_added", "Property RAG added"],
+                  ["annotations_added", "Annotations added"],
+                  ["property_rag_added", "Property RAG added (3+ entries)"],
+                  ["ai_tested", "AI agent tested"],
+                  ["viewer_previewed", "Mobile/desktop preview opened"],
+                  ["ready_to_publish", "Ready to publish"],
                 ].map(([key, label]) => (
                   <div key={key} className="wt-check-item" data-done={checklist[key as keyof WalkthroughChecklist] ? "true" : "false"}>
                     <Check className="h-4 w-4" /> {label}
@@ -604,7 +687,7 @@ export function CinematicWalkthroughWizard({
                 ))}
               </div>
             )}
-            <Button onClick={() => setStep("publish")}>Ready to publish</Button>
+            <Button onClick={() => setStep("publish")} disabled={!canPublish}>Ready to publish</Button>
           </div>
         )}
 
@@ -612,7 +695,10 @@ export function CinematicWalkthroughWizard({
           <div className="wt-card space-y-4 text-center">
             <h2 className="text-xl font-semibold">Publish walkthrough</h2>
             <p className="text-muted-foreground">Share link: /walkthrough/{slug ?? "your-slug"}</p>
-            <Button size="lg" onClick={publish}>Publish now</Button>
+            {!canPublish && (
+              <p className="text-sm text-amber-700">Complete the checklist in Preview before publishing.</p>
+            )}
+            <Button size="lg" onClick={publish} disabled={!canPublish}>Publish now</Button>
           </div>
         )}
       </div>

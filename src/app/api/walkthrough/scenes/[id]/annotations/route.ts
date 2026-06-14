@@ -12,6 +12,9 @@ const createSchema = z.object({
   x_position: z.coerce.number().min(0).max(1),
   y_position: z.coerce.number().min(0).max(1),
   cta_label: z.string().optional(),
+  pin_style: z.string().optional(),
+  icon_type: z.string().optional(),
+  ai_context: z.string().optional(),
   rag_enabled: z.boolean().optional(),
 });
 

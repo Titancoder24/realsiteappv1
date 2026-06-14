@@ -12,7 +12,7 @@ import {
 } from "@/lib/walkthrough-player-controller";
 import type { WalkthroughAnnotation, WalkthroughScene } from "@/types/cinematic-walkthrough";
 import type { PropertyScene, SceneAnnotationRecord } from "@/types/scene-intelligence";
-import { ChevronDown, Footprints, MessageSquare, Pause, Phone, Play } from "lucide-react";
+import { ChevronDown, Footprints, LayoutGrid, MessageSquare, Pause, Phone, Play, X } from "lucide-react";
 
 function toPropertyScene(scene: WalkthroughScene, isMobile: boolean): PropertyScene {
   const imageUrl = isMobile && scene.edited_image_url ? scene.edited_image_url : scene.image_url;
@@ -103,6 +103,7 @@ export function ScrollWalkthroughShell({
   });
   const [scrollProgress, setScrollProgress] = useState(0);
   const [showHint, setShowHint] = useState(true);
+  const [showRoomMenu, setShowRoomMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -116,6 +117,9 @@ export function ScrollWalkthroughShell({
         const container = containerRef.current;
         if (section && container) {
           container.scrollTo({ top: section.offsetTop, behavior: "smooth" });
+          window.setTimeout(() => {
+            setPlayer((p) => ({ ...p, isTransitioning: false }));
+          }, 600);
         }
         onSceneEvent?.("scene_jump", { sceneId: sceneIds[idx], index: idx, command: command.type });
       }
@@ -143,6 +147,11 @@ export function ScrollWalkthroughShell({
     onAICommand?.(externalAICommand);
     if (externalAICommand.command === "OPEN_LEAD_FORM") {
       onContact?.();
+      return;
+    }
+    if (externalAICommand.command === "SHOW_ROOM_MENU") {
+      setShowRoomMenu(true);
+      onSceneEvent?.("room_menu_opened", {});
       return;
     }
     const mapped = mapAICommandToPlayer(externalAICommand, sceneIds);
@@ -231,13 +240,24 @@ export function ScrollWalkthroughShell({
         <p className="shrink-0 text-xs font-medium text-white/80">{player.activeIndex + 1}/{scenes.length}</p>
       </div>
 
-      <div className="wt-room-strip">
+      <div className={`wt-room-strip ${showRoomMenu ? "wt-room-strip--expanded" : ""}`}>
+        {showRoomMenu && (
+          <div className="wt-room-menu-header">
+            <p>Jump to a room</p>
+            <button type="button" className="wt-room-menu-close" onClick={() => setShowRoomMenu(false)} aria-label="Close room menu">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         {scenes.map((s, i) => (
           <button
             key={s.id}
             type="button"
             className={`wt-room-chip ${i === player.activeIndex ? "wt-room-chip--active" : ""}`}
-            onClick={() => scrollToScene(i)}
+            onClick={() => {
+              scrollToScene(i);
+              setShowRoomMenu(false);
+            }}
           >
             {s.title}
           </button>
@@ -301,6 +321,14 @@ export function ScrollWalkthroughShell({
             aria-label="Toggle walk mode"
           >
             <Footprints className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            className="wt-viewer-btn"
+            onClick={() => setShowRoomMenu((open) => !open)}
+            aria-label="Room menu"
+          >
+            <LayoutGrid className="h-5 w-5" />
           </button>
           <button type="button" className="wt-viewer-btn" onClick={() => dispatch({ type: "SET_PLAYING", playing: !player.playing })} aria-label={player.playing ? "Pause" : "Play"}>
             {player.playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}

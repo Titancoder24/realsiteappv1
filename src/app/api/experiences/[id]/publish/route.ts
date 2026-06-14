@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { withAuth, jsonError } from "@/lib/api-utils";
+import { ensureWalkthroughChecklist, refreshWalkthroughChecklist } from "@/services/walkthrough.service";
 import { env } from "@/lib/env";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -11,6 +12,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     if (error || !exp) return jsonError("Not found", 404);
 
     if (!exp.slug) return jsonError("Experience missing slug", 400);
+
+    if (exp.type === "cinematic_walkthrough") {
+      await ensureWalkthroughChecklist(id);
+      const checklist = await refreshWalkthroughChecklist(id);
+      if (!checklist.images_uploaded || !checklist.scenes_created) {
+        return jsonError("Upload images and create scenes before publishing", 400);
+      }
+      if (!checklist.property_rag_added) {
+        return jsonError("Add at least 3 property knowledge entries before publishing", 400);
+      }
+    }
 
     const publishedUrl = exp.type === "cinematic_walkthrough"
       ? `${env.NEXT_PUBLIC_APP_URL}/walkthrough/${exp.slug}`

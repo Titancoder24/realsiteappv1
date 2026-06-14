@@ -9,6 +9,8 @@ export const VERTEX_PLANNER_MODELS = [
 
 export const VERTEX_VIDEO_MODEL = "veo-3.1-lite-generate-preview";
 
+export type VideoAspectRatio = "16:9" | "9:16";
+
 async function getClient() {
   const cfg = await getVertexAIConfig();
   const apiKey = cfg.api_key ?? process.env.GOOGLE_VERTEX_API_KEY ?? process.env.GOOGLE_API_KEY;
@@ -83,10 +85,15 @@ export class VertexAIService {
     throw lastError ?? new Error("Vertex AI planner failed");
   }
 
-  async submitVideoJob(prompt: string, imageUrl?: string): Promise<{ operationName: string }> {
+  async submitVideoJob(
+    prompt: string,
+    imageUrl?: string,
+    options?: { aspectRatio?: VideoAspectRatio },
+  ): Promise<{ operationName: string }> {
     const cfg = await getVertexAIConfig();
     const ai = await getClient();
     const model = cfg.video_model ?? VERTEX_VIDEO_MODEL;
+    const aspectRatio = options?.aspectRatio ?? "16:9";
 
     let imagePart: { imageBytes: string; mimeType: string } | undefined;
     if (imageUrl) {
@@ -107,9 +114,9 @@ export class VertexAIService {
       },
       config: {
         numberOfVideos: 1,
-        aspectRatio: "16:9",
+        aspectRatio,
         durationSeconds: 6,
-        resolution: "720p",
+        resolution: aspectRatio === "9:16" ? "720p" : "720p",
       },
     });
 

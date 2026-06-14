@@ -84,7 +84,7 @@ export class WalkthroughPlannerService {
         type: "text" as const,
         text: `${buildPlannerPrompt(propertyType, options?.propertyName)}\n\nImages:\n${images.map((img, i) => `${i + 1}. id=${img.id} file=${img.file_name}`).join("\n")}`,
       },
-      ...images.slice(0, 20).map((img) => ({
+      ...images.slice(0, 35).map((img) => ({
         type: "image_url" as const,
         imageUrl: { url: img.url },
       })),

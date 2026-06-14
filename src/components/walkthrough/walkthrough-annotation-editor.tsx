@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { WalkthroughAnnotation, WalkthroughScene } from "@/types/cinematic-walkthrough";
-import { MapPin, Plus, Trash2 } from "lucide-react";
+import { Loader2, MapPin, Plus, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const ANNOTATION_CATEGORIES = [
@@ -13,6 +13,24 @@ const ANNOTATION_CATEGORIES = [
   { value: "pricing", label: "Pricing" },
   { value: "cta", label: "Call to action" },
   { value: "compliance", label: "Compliance" },
+  { value: "meeting_room", label: "Meeting room" },
+  { value: "loading_bay", label: "Loading bay" },
+  { value: "parking", label: "Parking" },
+];
+
+const PIN_STYLES = [
+  { value: "default", label: "Default" },
+  { value: "feature", label: "Feature" },
+  { value: "amenity", label: "Amenity" },
+  { value: "cta", label: "CTA" },
+  { value: "compliance", label: "Compliance" },
+];
+
+const ICON_TYPES = [
+  { value: "pin", label: "Pin" },
+  { value: "star", label: "Star" },
+  { value: "info", label: "Info" },
+  { value: "dollar", label: "Pricing" },
 ];
 
 export function WalkthroughAnnotationEditor({
@@ -28,6 +46,8 @@ export function WalkthroughAnnotationEditor({
   const [placing, setPlacing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const [aiSuggesting, setAiSuggesting] = useState(false);
 
   const selected = annotations.find((a) => a.id === selectedId) ?? null;
   const imageUrl = scene.edited_image_url || scene.image_url;
@@ -46,6 +66,8 @@ export function WalkthroughAnnotationEditor({
         experience_id: scene.experience_id,
         title: "New pin",
         category: "room_feature",
+        pin_style: "default",
+        icon_type: "pin",
         x_position: Math.min(1, Math.max(0, x)),
         y_position: Math.min(1, Math.max(0, y)),
         visibility: "public",
@@ -64,6 +86,33 @@ export function WalkthroughAnnotationEditor({
   function updateSelected(patch: Partial<WalkthroughAnnotation>) {
     if (!selectedId) return;
     onAnnotationsChange(annotations.map((a) => (a.id === selectedId ? { ...a, ...patch } : a)));
+  }
+
+  async function suggestFromText() {
+    if (!selected || !aiText.trim()) return;
+    setAiSuggesting(true);
+    try {
+      const res = await fetch("/api/walkthrough/annotations/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: aiText, sceneTitle: scene.title }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "AI suggestion failed");
+      updateSelected({
+        title: data.title,
+        short_description: data.short_description,
+        description: data.description,
+        category: data.category,
+        ai_context: data.ai_context,
+      });
+      setAiText("");
+      toast.success("AI filled pin details — review and save");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "AI suggestion failed");
+    } finally {
+      setAiSuggesting(false);
+    }
   }
 
   async function saveSelected() {
@@ -85,6 +134,8 @@ export function WalkthroughAnnotationEditor({
         y_position: selected.y_position,
         visibility: selected.visibility,
         cta_label: selected.cta_label,
+        pin_style: selected.pin_style,
+        icon_type: selected.icon_type,
         ai_context: selected.ai_context,
         rag_enabled: selected.rag_enabled,
         crm_tracking_enabled: selected.crm_tracking_enabled,
@@ -140,6 +191,7 @@ export function WalkthroughAnnotationEditor({
               type="button"
               className="wt-annotation-pin"
               data-selected={selectedId === ann.id}
+              data-style={ann.pin_style ?? "default"}
               style={{ left: `${ann.x_position * 100}%`, top: `${ann.y_position * 100}%` }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -156,6 +208,25 @@ export function WalkthroughAnnotationEditor({
       <div className="wt-annotation-inspector">
         {selected ? (
           <div className="space-y-3">
+            <div className="rounded-md border bg-muted/40 p-2">
+              <label className="wt-field-label">Describe this pin (AI)</label>
+              <textarea
+                className="wt-input wt-textarea mt-1"
+                rows={2}
+                placeholder="e.g. Italian marble flooring — premium imported finish"
+                value={aiText}
+                onChange={(e) => setAiText(e.target.value)}
+              />
+              <button
+                type="button"
+                className="wt-btn-primary mt-2 w-full text-xs"
+                onClick={suggestFromText}
+                disabled={aiSuggesting || !aiText.trim()}
+              >
+                {aiSuggesting ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1 inline h-3.5 w-3.5" />}
+                {aiSuggesting ? "Generating…" : "AI fill pin details"}
+              </button>
+            </div>
             <div>
               <label className="wt-field-label">Title</label>
               <input className="wt-input" value={selected.title} onChange={(e) => updateSelected({ title: e.target.value })} />
@@ -168,13 +239,37 @@ export function WalkthroughAnnotationEditor({
               <label className="wt-field-label">Details</label>
               <textarea className="wt-input wt-textarea" value={selected.description ?? ""} onChange={(e) => updateSelected({ description: e.target.value })} rows={3} />
             </div>
-            <div>
-              <label className="wt-field-label">Category</label>
-              <select className="wt-input" value={selected.category} onChange={(e) => updateSelected({ category: e.target.value })}>
-                {ANNOTATION_CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="wt-field-label">Category</label>
+                <select className="wt-input" value={selected.category} onChange={(e) => updateSelected({ category: e.target.value })}>
+                  {ANNOTATION_CATEGORIES.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="wt-field-label">Pin style</label>
+                <select className="wt-input" value={selected.pin_style ?? "default"} onChange={(e) => updateSelected({ pin_style: e.target.value })}>
+                  {PIN_STYLES.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="wt-field-label">Icon</label>
+                <select className="wt-input" value={selected.icon_type ?? "pin"} onChange={(e) => updateSelected({ icon_type: e.target.value })}>
+                  {ICON_TYPES.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="wt-field-label">CTA label</label>
+                <input className="wt-input" value={selected.cta_label ?? ""} onChange={(e) => updateSelected({ cta_label: e.target.value })} placeholder="Book visit" />
+              </div>
             </div>
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <input type="checkbox" checked={selected.rag_enabled} onChange={(e) => updateSelected({ rag_enabled: e.target.checked })} />
@@ -191,7 +286,7 @@ export function WalkthroughAnnotationEditor({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Select a pin on the image or add a new one. Pins appear in the buyer walkthrough and feed the AI assistant.
+            Select a pin on the image or add a new one. Use AI describe to auto-fill title, category, and knowledge context.
           </p>
         )}
       </div>

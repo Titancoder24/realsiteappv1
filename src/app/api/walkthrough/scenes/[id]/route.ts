@@ -17,6 +17,7 @@ const patchSchema = z.object({
   edited_image_url: z.string().optional(),
   edit_config: z.record(z.unknown()).optional(),
   ai_context: z.string().optional(),
+  veo_prompt: z.string().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -21,13 +21,20 @@ export class OpenRouterVideoService {
     };
   }
 
-  async submitVideoJob(prompt: string, imageUrl?: string): Promise<{ jobId: string; pollingUrl: string }> {
+  async submitVideoJob(
+    prompt: string,
+    imageUrl?: string,
+    options?: { aspectRatio?: "16:9" | "9:16" },
+  ): Promise<{ jobId: string; pollingUrl: string }> {
     const body: Record<string, unknown> = {
       model: this.model,
       prompt,
     };
     if (imageUrl) {
       body.image_url = imageUrl;
+    }
+    if (options?.aspectRatio) {
+      body.aspect_ratio = options.aspectRatio;
     }
 
     const res = await fetch("https://openrouter.ai/api/v1/videos", {
