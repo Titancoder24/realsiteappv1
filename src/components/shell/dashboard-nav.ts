@@ -4,6 +4,7 @@ import {
   Building,
   Building2,
   Camera,
+  Clapperboard,
   Compass,
   FileStack,
   LayoutDashboard,
@@ -71,6 +72,7 @@ export const DASHBOARD_NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/team", label: "Team Access", icon: Users2, minRole: "organization_admin" },
       { href: "/dashboard/settings", label: "Workspace", icon: Settings2 },
       { href: "/admin", label: "Platform Admin", icon: ShieldCheck, adminOnly: true },
+      { href: "/admin/walkthrough-ai", label: "Walkthrough AI", icon: Clapperboard, adminOnly: true },
     ],
   },
 ];

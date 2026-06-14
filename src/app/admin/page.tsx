@@ -4,14 +4,13 @@ import Link from "next/link";
 
 export default function AdminPage() {
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Platform Admin</h1>
-          <p className="text-muted-foreground">Engine control, World Labs operations, model & voice settings</p>
-        </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Platform Overview</h1>
+        <p className="mt-1 text-muted-foreground">Engine control, Property Walkthrough AI, World Labs, and platform settings</p>
+      </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[
             { title: "Property Walkthrough AI", href: "/admin/walkthrough-ai", status: "OpenRouter / Vertex" },
             { title: "World Labs Operations", href: "/admin/worldlabs", status: "Online" },
@@ -33,7 +32,6 @@ export default function AdminPage() {
             </Link>
           ))}
         </div>
-      </div>
     </div>
   );
 }

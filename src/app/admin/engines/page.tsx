@@ -24,8 +24,7 @@ export default function EnginesAdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6">
         <h1 className="text-2xl font-semibold">Engine Control</h1>
         <Card>
           <CardHeader><CardTitle>Global Default: {data?.globalDefault}</CardTitle></CardHeader>
@@ -41,7 +40,6 @@ export default function EnginesAdminPage() {
             ))}
           </CardContent>
         </Card>
-      </div>
     </div>
   );
 }

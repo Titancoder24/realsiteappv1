@@ -40,8 +40,7 @@ export default function WorldLabsAdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">World Labs Operations</h1>
           <Badge variant="success">Live Data</Badge>
@@ -78,7 +77,6 @@ export default function WorldLabsAdminPage() {
             {!jobs.length && <p className="text-sm text-muted-foreground">No World Labs jobs yet.</p>}
           </CardContent>
         </Card>
-      </div>
     </div>
   );
 }

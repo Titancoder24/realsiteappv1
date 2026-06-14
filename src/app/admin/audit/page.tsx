@@ -2,11 +2,9 @@ import { AuditLogViewer } from "@/components/admin/audit-log-viewer";
 
 export default function AuditLogPage() {
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <h1 className="text-2xl font-semibold">Audit Logs</h1>
-        <AuditLogViewer />
-      </div>
+    <div className="mx-auto max-w-4xl space-y-6">
+      <h1 className="text-2xl font-semibold">Audit Logs</h1>
+      <AuditLogViewer />
     </div>
   );
 }
