@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     });
 
     if (error) return jsonError(error.message, 401);
-    return NextResponse.json({ ok: true, redirect: "/admin/walkthrough-ai" });
+    return NextResponse.json({ ok: true, redirect: "/admin" });
   } catch (err) {
     if (err instanceof z.ZodError) return jsonError("Invalid credentials", 400);
     return jsonError(err instanceof Error ? err.message : "Login failed", 500);

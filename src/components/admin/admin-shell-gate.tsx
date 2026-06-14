@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { LayoutGrid } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
 import {
   SidebarInset,
   SidebarProvider,
@@ -22,7 +23,16 @@ export function AdminShellGate({ children }: { children: React.ReactNode }) {
 
 function AdminAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [provider, setProvider] = useState<"openrouter" | "vertex" | undefined>();
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.dataset.shell = "super-admin";
+    return () => {
+      delete document.documentElement.dataset.shell;
+    };
+  }, []);
 
   useEffect(() => {
     fetch("/api/admin/walkthrough-ai")
@@ -31,9 +41,17 @@ function AdminAppShell({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, [pathname]);
 
+  async function signOut() {
+    setSigningOut(true);
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.replace("/admin/login");
+    router.refresh();
+  }
+
   const title =
     pathname === "/admin"
-      ? "Platform Overview"
+      ? "Platform Analytics"
       : pathname.includes("walkthrough-ai")
         ? "Property Walkthrough AI"
         : pathname.includes("worldlabs")
@@ -47,10 +65,10 @@ function AdminAppShell({ children }: { children: React.ReactNode }) {
                 : "Super Admin";
 
   return (
-    <SidebarProvider defaultOpen>
-      <div className="flex min-h-svh w-full">
+    <SidebarProvider key="super-admin-shell" defaultOpen>
+      <div className="flex min-h-svh w-full bg-muted/20" data-shell="super-admin">
         <AdminSidebar activeProvider={provider} />
-        <SidebarInset className="flex min-h-svh flex-col overflow-x-hidden bg-muted/20">
+        <SidebarInset className="flex min-h-svh flex-col overflow-x-hidden bg-background">
           <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-background/95 px-4 backdrop-blur-md">
             <SidebarTrigger className="size-9 shrink-0" />
             <div className="min-w-0 flex-1">
@@ -58,11 +76,25 @@ function AdminAppShell({ children }: { children: React.ReactNode }) {
               <p className="truncate text-xs text-muted-foreground">Super Admin Panel</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <Button size="sm" variant="outline" className="hidden sm:inline-flex" asChild>
-                <Link href="/dashboard">
-                  <LayoutGrid className="mr-1.5 h-4 w-4" />
-                  Dashboard
-                </Link>
+              <Button
+                size="sm"
+                variant="outline"
+                className="hidden sm:inline-flex"
+                onClick={signOut}
+                disabled={signingOut}
+              >
+                <LogOut className="mr-1.5 h-4 w-4" />
+                Sign out
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-9 sm:hidden"
+                onClick={signOut}
+                disabled={signingOut}
+                aria-label="Sign out"
+              >
+                <LogOut className="h-4 w-4" />
               </Button>
             </div>
           </header>

@@ -4,7 +4,6 @@ import {
   Building,
   Building2,
   Camera,
-  Clapperboard,
   Compass,
   FileStack,
   LayoutDashboard,
@@ -13,14 +12,12 @@ import {
   Mic2,
   Package,
   Settings2,
-  ShieldCheck,
   UserRoundSearch,
   Users2,
   Video,
 } from "lucide-react";
 import type { UserRole } from "@/types/domain";
 import { canAccessRoute } from "@/components/auth/role-guard";
-import { canAccessAdmin } from "@/lib/auth/rbac";
 
 export type NavItem = {
   href: string;
@@ -71,8 +68,6 @@ export const DASHBOARD_NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/team", label: "Team Access", icon: Users2, minRole: "organization_admin" },
       { href: "/dashboard/settings", label: "Workspace", icon: Settings2 },
-      { href: "/admin", label: "Platform Admin", icon: ShieldCheck, adminOnly: true },
-      { href: "/admin/walkthrough-ai", label: "Walkthrough AI", icon: Clapperboard, adminOnly: true },
     ],
   },
 ];
@@ -81,7 +76,7 @@ export function getVisibleNavGroups(role: UserRole) {
   return DASHBOARD_NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
-      if (item.adminOnly) return canAccessAdmin(role);
+      if (item.adminOnly) return false;
       return canAccessRoute(role, item.href);
     }),
   })).filter((g) => g.items.length > 0);

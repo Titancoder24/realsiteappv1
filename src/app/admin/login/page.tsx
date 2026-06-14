@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +15,7 @@ function LoginForm() {
   const [needsSetup, setNeedsSetup] = useState(false);
   const params = useSearchParams();
   const router = useRouter();
-  const redirect = params.get("redirect") ?? "/admin/walkthrough-ai";
+  const redirect = params.get("redirect") ?? "/admin";
 
   useEffect(() => {
     fetch("/api/admin/auth/setup").then((r) => r.json()).then((d) => {
@@ -69,7 +68,7 @@ function LoginForm() {
           </Button>
         </form>
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          <Link href="/dashboard" className="underline">Back to dashboard</Link>
+          Platform operators only — no user dashboard access from this panel.
         </p>
       </CardContent>
     </Card>

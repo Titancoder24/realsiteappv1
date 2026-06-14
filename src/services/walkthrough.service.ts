@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logApiUsage, type ApiProvider } from "@/lib/api-usage-logger";
 import { embeddingService } from "./embedding.service";
 import { openRouterImageService } from "./openrouter-image.service";
 import { openRouterVideoService } from "./openrouter-video.service";
@@ -101,9 +102,25 @@ export async function runImageEnhancement(imageId: string) {
     }).eq("id", job!.id);
 
     await refreshWalkthroughChecklist(image.experience_id);
+    await logApiUsage({
+      provider: "openrouter",
+      operation: "image_enhance",
+      model,
+      organizationId: image.organization_id,
+      experienceId: image.experience_id,
+      status: "success",
+    });
     return enhancedUrl;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Enhancement failed";
+    await logApiUsage({
+      provider: "openrouter",
+      operation: "image_enhance",
+      organizationId: image.organization_id,
+      experienceId: image.experience_id,
+      status: "failed",
+      metadata: { error: msg },
+    });
     await admin.from("walkthrough_images").update({
       enhancement_status: "failed",
       enhancement_error: msg,
@@ -144,9 +161,20 @@ export async function planAndCreateScenes(experienceId: string) {
     file_name: img.file_name,
   }));
 
-  const { plan, plans, flow_warnings } = await planWalkthroughScenes(imageInputs, {
+  const { plan, plans, flow_warnings, provider } = await planWalkthroughScenes(imageInputs, {
     propertyType: property?.property_type ?? "residential",
     propertyName: property?.name,
+  });
+
+  const usageProvider: ApiProvider =
+    provider === "vertex" ? "vertex" : provider === "openrouter" ? "openrouter" : "internal";
+  await logApiUsage({
+    provider: usageProvider,
+    operation: "plan_scenes",
+    organizationId: exp.organization_id,
+    experienceId,
+    status: provider === "fallback" ? "failed" : "success",
+    metadata: { scene_count: plans.length, property_type: property?.property_type },
   });
 
   await admin.from("walkthrough_plans").upsert({
@@ -461,6 +489,15 @@ async function ensureVideoJobSubmitted(jobId: string) {
 
   if (provider === "vertex") {
     const { operationName } = await vertexAIService.submitVideoJob(job.prompt, imageUrl);
+    await logApiUsage({
+      provider: "vertex",
+      operation: "video_generate",
+      model: job.model,
+      organizationId: job.organization_id,
+      experienceId: job.experience_id,
+      status: "queued",
+      metadata: { scene_id: job.scene_id, operation: operationName },
+    });
     const { data: updated } = await admin.from("walkthrough_video_jobs").update({
       openrouter_job_id: operationName,
       polling_url: `vertex://${operationName}`,
@@ -470,6 +507,15 @@ async function ensureVideoJobSubmitted(jobId: string) {
   }
 
   const { jobId: openrouterJobId, pollingUrl } = await openRouterVideoService.submitVideoJob(job.prompt, imageUrl);
+  await logApiUsage({
+    provider: "openrouter",
+    operation: "video_generate",
+    model: job.model,
+    organizationId: job.organization_id,
+    experienceId: job.experience_id,
+    status: "queued",
+    metadata: { scene_id: job.scene_id, job_id: openrouterJobId },
+  });
   const { data: updated } = await admin.from("walkthrough_video_jobs").update({
     openrouter_job_id: openrouterJobId,
     polling_url: pollingUrl,

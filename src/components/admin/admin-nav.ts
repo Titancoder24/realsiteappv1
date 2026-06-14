@@ -4,10 +4,9 @@ import {
   Cloud,
   FileSearch,
   LayoutDashboard,
-  LogIn,
+  LogOut,
   Router,
   Settings2,
-  ShieldCheck,
   Sparkles,
   Wand2,
 } from "lucide-react";
@@ -17,6 +16,7 @@ export type AdminNavItem = {
   label: string;
   description?: string;
   icon: LucideIcon;
+  action?: "signout";
 };
 
 export type AdminNavGroup = {
@@ -51,7 +51,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     label: "Platform",
     items: [
-      { href: "/admin", label: "Overview", icon: LayoutDashboard },
+      { href: "/admin", label: "Analytics", description: "Users, usage & API calls", icon: LayoutDashboard },
       { href: "/admin/worldlabs", label: "World Labs", icon: Sparkles },
       { href: "/admin/engines", label: "Engine Control", icon: Router },
       { href: "/admin/models", label: "Models & Voice", icon: Settings2 },
@@ -59,10 +59,9 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     ],
   },
   {
-    label: "Account",
+    label: "Session",
     items: [
-      { href: "/dashboard", label: "Back to Dashboard", icon: ShieldCheck },
-      { href: "/admin/login", label: "Super Admin Login", icon: LogIn },
+      { href: "#signout", label: "Sign out", icon: LogOut, action: "signout" },
     ],
   },
 ];

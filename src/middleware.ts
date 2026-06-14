@@ -47,7 +47,13 @@ export async function middleware(request: NextRequest) {
 
   if (isAuthRoute && user) {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    const role = (profile?.role as UserRole) ?? "viewer";
+    url.pathname = role === "platform_admin" ? "/admin" : "/dashboard";
     return NextResponse.redirect(url);
   }
 
@@ -68,6 +74,12 @@ export async function middleware(request: NextRequest) {
         url.searchParams.set("redirect", path);
         return NextResponse.redirect(url);
       }
+    }
+
+    if (role === "platform_admin" && path.startsWith("/dashboard")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin";
+      return NextResponse.redirect(url);
     }
 
     const minRole = getRouteMinRole(path);

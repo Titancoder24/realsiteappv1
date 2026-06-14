@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { Plus, Search, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,10 +24,17 @@ export function SpatialSalesAppShell({ children }: { children: React.ReactNode }
   const visibleGroups = getVisibleNavGroups(role);
   const { themeId, mode, ready } = useSidebarTheme();
 
+  useEffect(() => {
+    document.documentElement.dataset.shell = "dashboard";
+    return () => {
+      delete document.documentElement.dataset.shell;
+    };
+  }, []);
+
   const isFullscreenRoute = pathname.includes("/dashboard/capture/");
 
   return (
-    <SidebarProvider defaultOpen={false}>
+    <SidebarProvider key="dashboard-shell" defaultOpen={false}>
       <div className="flex min-h-svh w-full" style={ready ? themeStyleVars(themeId, mode) : undefined}>
         <DashboardSidebar groups={visibleGroups} role={role} />
         <SidebarInset className="flex min-h-svh flex-col overflow-x-hidden bg-muted/30">
