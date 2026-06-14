@@ -36,10 +36,11 @@ export async function middleware(request: NextRequest) {
 
   const isProtected = PROTECTED_PREFIXES.some((p) => path.startsWith(p));
   const isAuthRoute = AUTH_ROUTES.some((p) => path.startsWith(p));
+  const isPublicAdmin = path === "/admin/login" || path === "/admin/setup";
 
-  if (isProtected && !user) {
+  if (isProtected && !user && !isPublicAdmin) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = path.startsWith("/admin") ? "/admin/login" : "/login";
     url.searchParams.set("redirect", path);
     return NextResponse.redirect(url);
   }
@@ -50,7 +51,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && (isProtected || path.startsWith("/admin"))) {
+  if (user && (isProtected || path.startsWith("/admin")) && !isPublicAdmin) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
@@ -60,9 +61,13 @@ export async function middleware(request: NextRequest) {
     const role = (profile?.role as UserRole) ?? "viewer";
 
     if (path.startsWith("/admin") && role !== "platform_admin") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard";
-      return NextResponse.redirect(url);
+      const publicAdminPaths = ["/admin/login", "/admin/setup"];
+      if (!publicAdminPaths.some((p) => path === p || path.startsWith(p + "/"))) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/admin/login";
+        url.searchParams.set("redirect", path);
+        return NextResponse.redirect(url);
+      }
     }
 
     const minRole = getRouteMinRole(path);

@@ -13,10 +13,12 @@ export default function AdminPage() {
 
         <div className="grid gap-4 md:grid-cols-3">
           {[
+            { title: "Property Walkthrough AI", href: "/admin/walkthrough-ai", status: "OpenRouter / Vertex" },
             { title: "World Labs Operations", href: "/admin/worldlabs", status: "Online" },
             { title: "Engine Control", href: "/admin/engines", status: "360 + World Labs" },
             { title: "Model & Voice", href: "/admin/models", status: "Configured" },
             { title: "Audit Logs", href: "/admin/audit", status: "Active" },
+            { title: "Super Admin Login", href: "/admin/login", status: "Secure" },
           ].map((item) => (
             <Link key={item.href} href={item.href}>
               <Card className="transition-colors hover:border-primary/50">

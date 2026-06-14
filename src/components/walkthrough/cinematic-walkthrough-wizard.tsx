@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WalkthroughRagChat } from "@/components/walkthrough/walkthrough-rag-chat";
 import { WalkthroughAnnotationEditor } from "@/components/walkthrough/walkthrough-annotation-editor";
-import type { WalkthroughAnnotation, WalkthroughChecklist, WalkthroughImage, WalkthroughScene, WalkthroughWizardStep } from "@/types/cinematic-walkthrough";
+import type { WalkthroughChecklist, WalkthroughImage, WalkthroughScene, WalkthroughWizardStep } from "@/types/cinematic-walkthrough";
 import { WALKTHROUGH_MOTION_PRESETS, WALKTHROUGH_WIZARD_STEPS } from "@/types/cinematic-walkthrough";
-import { Check, ExternalLink, GripVertical, Loader2, Sparkles, Upload } from "lucide-react";
+import { Check, Clapperboard, ExternalLink, GripVertical, Loader2, Sparkles, Upload, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import "@/styles/walkthrough-studio.css";
 
@@ -345,7 +345,7 @@ export function CinematicWalkthroughWizard({
               <h2 className="font-medium">Analyze & plan scenes</h2>
               <p className="text-sm text-muted-foreground">AI names each room, suggests motion, and builds your walkthrough flow.</p>
               <Button className="mt-4" onClick={planScenes} disabled={planning || !images.length}>
-                {planning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                {planning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                 {planning ? "Analyzing images…" : "Generate scenes with AI"}
               </Button>
               {!images.length && (
@@ -438,7 +438,7 @@ export function CinematicWalkthroughWizard({
                   startVideoPolling();
                 }}
               >
-                {generatingMotion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                {generatingMotion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Clapperboard className="mr-2 h-4 w-4" />}
                 {generatingMotion ? "Generating motion…" : "Generate all motion"}
               </Button>
             </div>

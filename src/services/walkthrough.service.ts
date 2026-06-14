@@ -2,7 +2,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { embeddingService } from "./embedding.service";
 import { openRouterImageService } from "./openrouter-image.service";
 import { openRouterVideoService } from "./openrouter-video.service";
+import { vertexAIService } from "./vertex-ai.service";
+import { getWalkthroughAIProvider, getVertexAIConfig } from "@/lib/platform-settings";
 import { walkthroughPlannerService } from "./walkthrough-planner.service";
+import { planWalkthroughScenes } from "./walkthrough-ai-orchestrator";
 import type { WalkthroughChecklist, WalkthroughScene } from "@/types/cinematic-walkthrough";
 
 const MAX_IMAGES = 35;
@@ -141,7 +144,7 @@ export async function planAndCreateScenes(experienceId: string) {
     file_name: img.file_name,
   }));
 
-  const { plan, plans, flow_warnings } = await walkthroughPlannerService.planScenes(imageInputs, {
+  const { plan, plans, flow_warnings } = await planWalkthroughScenes(imageInputs, {
     propertyType: property?.property_type ?? "residential",
     propertyName: property?.name,
   });
@@ -420,13 +423,19 @@ export async function queueSceneVideoJob(sceneId: string) {
     return { sceneId, jobId: existing.id, status: existing.status as "queued" | "submitted" | "processing" };
   }
 
+  const provider = await getWalkthroughAIProvider();
+  const vertexCfg = await getVertexAIConfig();
+  const videoModel = provider === "vertex"
+    ? (vertexCfg.video_model ?? "veo-3.1-lite-generate-001")
+    : (process.env.OPENROUTER_VIDEO_MODEL ?? "google/veo-3.1-lite");
+
   const { data: job } = await admin.from("walkthrough_video_jobs").insert({
     scene_id: sceneId,
     experience_id: scene.experience_id,
     property_id: scene.property_id,
     organization_id: orgId,
     status: "queued",
-    model: process.env.OPENROUTER_VIDEO_MODEL ?? "google/veo-3.1-lite",
+    model: videoModel,
     prompt,
     started_at: new Date().toISOString(),
   }).select().single();
@@ -440,15 +449,27 @@ async function ensureVideoJobSubmitted(jobId: string) {
   const admin = createAdminClient();
   const { data: job, error } = await admin
     .from("walkthrough_video_jobs")
-    .select("*, walkthrough_scenes(image_url)")
+    .select("*")
     .eq("id", jobId)
     .single();
   if (error || !job) throw new Error("Video job not found");
   if (job.polling_url) return job;
 
-  const imageUrl = (job.walkthrough_scenes as { image_url?: string } | null)?.image_url;
-  const { jobId: openrouterJobId, pollingUrl } = await openRouterVideoService.submitVideoJob(job.prompt, imageUrl);
+  const { data: sceneRow } = await admin.from("walkthrough_scenes").select("image_url").eq("id", job.scene_id).single();
+  const imageUrl = sceneRow?.image_url;
+  const provider = await getWalkthroughAIProvider();
 
+  if (provider === "vertex") {
+    const { operationName } = await vertexAIService.submitVideoJob(job.prompt, imageUrl);
+    const { data: updated } = await admin.from("walkthrough_video_jobs").update({
+      openrouter_job_id: operationName,
+      polling_url: `vertex://${operationName}`,
+      status: "processing",
+    }).eq("id", jobId).select().single();
+    return updated ?? job;
+  }
+
+  const { jobId: openrouterJobId, pollingUrl } = await openRouterVideoService.submitVideoJob(job.prompt, imageUrl);
   const { data: updated } = await admin.from("walkthrough_video_jobs").update({
     openrouter_job_id: openrouterJobId,
     polling_url: pollingUrl,
@@ -456,6 +477,22 @@ async function ensureVideoJobSubmitted(jobId: string) {
   }).eq("id", jobId).select().single();
 
   return updated ?? job;
+}
+
+async function storeVideoBuffer(
+  buffer: Buffer,
+  organizationId: string,
+  propertyId: string,
+  sceneId: string,
+  contentType = "video/mp4",
+): Promise<string> {
+  const ext = contentType.includes("webm") ? "webm" : "mp4";
+  const path = `${organizationId}/${propertyId}/walkthrough/motion-${sceneId.slice(0, 8)}-${Date.now()}.${ext}`;
+  const admin = createAdminClient();
+  const { error } = await admin.storage.from("media").upload(path, buffer, { contentType, upsert: true });
+  if (error) throw error;
+  const { data: { publicUrl } } = admin.storage.from("media").getPublicUrl(path);
+  return publicUrl;
 }
 
 /** @deprecated Use queueSceneVideoJob — submit happens on poll to keep API under 1s */
@@ -483,11 +520,50 @@ export async function pollSceneVideoJob(jobId: string) {
     : job;
   if (!activeJob.polling_url) throw new Error("Job missing polling URL");
 
-  const result = await openRouterVideoService.pollOnce(activeJob.polling_url);
   const { data: scene } = await admin.from("walkthrough_scenes").select("id, experience_id, property_id, organization_id").eq("id", job.scene_id).single();
   if (!scene) throw new Error("Scene not found for video job");
 
   const orgId = job.organization_id ?? scene.organization_id;
+
+  if (activeJob.polling_url.startsWith("vertex://")) {
+    const operationName = activeJob.polling_url.replace("vertex://", "");
+    const result = await vertexAIService.pollVideoOperation(operationName);
+
+    if (result.status === "processing") {
+      return { jobId, status: "processing" as const };
+    }
+    if (result.status === "failed") {
+      const msg = result.error ?? "Vertex video generation failed";
+      await admin.from("walkthrough_video_jobs").update({ status: "failed", error: msg, completed_at: new Date().toISOString() }).eq("id", jobId);
+      await admin.from("walkthrough_scenes").update({ scene_status: "fallback_image" }).eq("id", scene.id);
+      return { jobId, status: "failed" as const, error: msg };
+    }
+
+    const buffer = await vertexAIService.downloadVideo(result.videoUri!);
+    const storedUrl = await storeVideoBuffer(buffer, orgId!, scene.property_id, scene.id);
+
+    await admin.from("walkthrough_video_jobs").update({
+      status: "completed",
+      stored_video_url: storedUrl,
+      video_url_720p: storedUrl,
+      video_url_1080p: storedUrl,
+      video_url_mobile: storedUrl,
+      completed_at: new Date().toISOString(),
+    }).eq("id", jobId);
+
+    await admin.from("walkthrough_scenes").update({
+      video_url: storedUrl,
+      video_url_720p: storedUrl,
+      video_url_1080p: storedUrl,
+      video_url_mobile: storedUrl,
+      scene_status: "motion_ready",
+    }).eq("id", scene.id);
+
+    await refreshWalkthroughChecklist(scene.experience_id);
+    return { jobId, status: "completed" as const, video_url: storedUrl };
+  }
+
+  const result = await openRouterVideoService.pollOnce(activeJob.polling_url);
 
   if (result.status === "completed" && result.unsignedUrls.length) {
     const storedUrl = await openRouterVideoService.downloadAndStore(
