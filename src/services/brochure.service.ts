@@ -51,6 +51,7 @@ export async function createBrochure(params: {
   fileUrl: string;
   pageCount?: number;
   createdBy?: string;
+  status?: "draft" | "published" | "archived";
 }) {
   const admin = createAdminClient();
   const slug = slugify(`${params.title}-${Date.now().toString(36)}`);
@@ -64,6 +65,7 @@ export async function createBrochure(params: {
     slug,
     file_url: params.fileUrl,
     page_count: pageCount,
+    status: params.status ?? "draft",
     created_by: params.createdBy,
   }).select().single();
   if (error) throw error;

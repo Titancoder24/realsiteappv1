@@ -46,11 +46,21 @@ export async function renderPdfPage(
 }
 
 export async function getPdfPageCount(file: File): Promise<number> {
-  const pdfjs = await getPdfjs();
-  const buffer = await file.arrayBuffer();
-  const task = pdfjs.getDocument({ data: buffer });
-  const doc = await task.promise;
-  const count = doc.numPages;
-  await doc.destroy();
-  return count;
+  try {
+    const pdfjs = await getPdfjs();
+    const buffer = await file.arrayBuffer();
+    const task = pdfjs.getDocument({ data: new Uint8Array(buffer), useWorkerFetch: false, isEvalSupported: false });
+    const doc = await task.promise;
+    const count = doc.numPages;
+    await doc.destroy();
+    return count;
+  } catch {
+    const legacy = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const buffer = await file.arrayBuffer();
+    const task = legacy.getDocument({ data: buffer, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
+    const doc = await task.promise;
+    const count = doc.numPages;
+    await doc.destroy();
+    return count;
+  }
 }

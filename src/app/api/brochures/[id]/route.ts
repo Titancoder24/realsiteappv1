@@ -27,5 +27,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const body = patchSchema.parse(await req.json());
     const data = await updateBrochure(id, profile.organization_id!, body);
     return NextResponse.json(data);
-  }, "project_manager");
+  }, "sales_agent");
 }

@@ -10,7 +10,9 @@ import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { ExternalLink, Upload, Copy, Link2 } from "lucide-react";
 import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/client";
 import { getPdfPageCount } from "@/lib/brochure/pdf-client";
+import { isPdfFile, pdfContentType } from "@/lib/brochure/pdf-utils";
 
 interface Analytics {
   brochureCount: number;
@@ -56,42 +58,93 @@ export function BrochureIntelligenceDashboard() {
   async function onFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const inferredTitle = file.name.replace(/\.pdf$/i, "");
-    if (!title) setTitle(inferredTitle);
-    try {
-      const count = await getPdfPageCount(file);
-      setPageCount(String(count));
-      await uploadBrochure(file, count);
-    } catch {
-      toast.error("Could not read PDF — check the file and try again");
-    } finally {
-      e.target.value = "";
-    }
-  }
 
-  async function uploadBrochure(file: File, count?: number) {
-    const resolvedTitle = title || file.name.replace(/\.pdf$/i, "");
-    if (!propertyId || !resolvedTitle) {
-      toast.error("Select a property and title before uploading");
+    if (!isPdfFile(file)) {
+      toast.error("Please choose a PDF file");
+      e.target.value = "";
       return;
     }
+
+    const resolvedTitle = title || file.name.replace(/\.pdf$/i, "");
+    if (!propertyId || !resolvedTitle) {
+      toast.error("Select a property and add a title before uploading");
+      e.target.value = "";
+      return;
+    }
+
+    if (!title) setTitle(resolvedTitle);
+
+    let count = Number(pageCount);
+    try {
+      count = await getPdfPageCount(file);
+      setPageCount(String(count));
+    } catch {
+      toast.message("Page count could not be auto-detected — using your entered value");
+    }
+
     setUploading(true);
-    const form = new FormData();
-    form.append("file", file);
-    form.append("propertyId", propertyId);
-    form.append("title", resolvedTitle);
-    form.append("pageCount", String(count ?? pageCount));
-    const res = await fetch("/api/brochures", { method: "POST", body: form });
-    const json = await res.json();
-    setUploading(false);
-    if (!res.ok) return toast.error(json.error ?? "Upload failed");
-    toast.success("Brochure published — copy the tracked link below");
-    await fetch(`/api/brochures/${json.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "published" }),
-    });
-    load();
+    try {
+      const prepRes = await fetch("/api/brochures/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: file.name,
+          propertyId,
+          contentType: pdfContentType(file),
+        }),
+      });
+      const prep = await prepRes.json();
+      if (!prepRes.ok) throw new Error(prep.error ?? "Could not prepare upload");
+
+      const supabase = createClient();
+      const { error: storageError } = await supabase.storage
+        .from("media")
+        .uploadToSignedUrl(prep.path, prep.token, file, {
+          contentType: prep.contentType,
+          upsert: false,
+        });
+      if (storageError) {
+        if (file.size <= 4 * 1024 * 1024) {
+          const form = new FormData();
+          form.append("file", file);
+          form.append("propertyId", propertyId);
+          form.append("title", resolvedTitle);
+          form.append("pageCount", String(Number.isFinite(count) && count > 0 ? count : Number(pageCount) || 1));
+          form.append("publish", "true");
+          const fallbackRes = await fetch("/api/brochures", { method: "POST", body: form });
+          const fallbackJson = await fallbackRes.json();
+          if (!fallbackRes.ok) throw new Error(fallbackJson.error ?? storageError.message);
+          toast.success("Brochure published — copy the tracked link below");
+          load();
+          return;
+        }
+        throw new Error(storageError.message);
+      }
+
+      const createRes = await fetch("/api/brochures", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          propertyId,
+          title: resolvedTitle,
+          fileUrl: prep.publicUrl,
+          fileName: file.name,
+          fileSize: file.size,
+          pageCount: Number.isFinite(count) && count > 0 ? count : Number(pageCount) || 1,
+          publish: true,
+        }),
+      });
+      const created = await createRes.json();
+      if (!createRes.ok) throw new Error(created.error ?? "Could not save brochure");
+
+      toast.success("Brochure published — copy the tracked link below");
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   }
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -156,6 +209,9 @@ export function BrochureIntelligenceDashboard() {
         <Card>
           <CardHeader><CardTitle>Upload tracked brochure</CardTitle></CardHeader>
           <CardContent className="space-y-3">
+            {properties.length === 0 && (
+              <p className="text-xs text-muted-foreground">No properties found. Create a property first, then upload.</p>
+            )}
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={propertyId}
@@ -167,18 +223,19 @@ export function BrochureIntelligenceDashboard() {
               ))}
             </select>
             <Input placeholder="Brochure title" value={title} onChange={(e) => setTitle(e.target.value)} />
-            <Input placeholder="Page count (auto-detected from PDF)" value={pageCount} onChange={(e) => setPageCount(e.target.value)} />
-            <label className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted">
+            <Input placeholder="Page count (auto-detected when possible)" value={pageCount} onChange={(e) => setPageCount(e.target.value)} />
+            <label className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted ${uploading ? "opacity-60" : ""}`}>
               <Upload className="h-4 w-4" />
-              {uploading ? "Uploading…" : "Upload PDF brochure"}
+              {uploading ? "Uploading PDF…" : "Choose PDF brochure"}
               <input
                 type="file"
-                accept="application/pdf"
+                accept="application/pdf,.pdf"
                 className="hidden"
                 onChange={onUpload}
                 disabled={uploading}
               />
             </label>
+            <p className="text-xs text-muted-foreground">PDFs upload directly to storage (up to 50MB). Pick a property and title first.</p>
           </CardContent>
         </Card>
       </div>
