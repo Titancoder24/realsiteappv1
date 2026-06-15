@@ -41,6 +41,7 @@ export const ROUTE_PERMISSIONS: Record<string, UserRole> = {
   "/dashboard/checkpoints": "project_manager",
   "/dashboard/knowledge": "project_manager",
   "/dashboard/brochure-intelligence": "sales_agent",
+  "/dashboard/buyer-intent": "sales_agent",
   "/dashboard/ai-agent": "project_manager",
   "/dashboard/leads": "sales_agent",
   "/dashboard/site-visits": "sales_agent",

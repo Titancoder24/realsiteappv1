@@ -313,14 +313,16 @@ export class BrochureIntentService {
       { data: heatmaps },
       { data: alerts },
       { data: sessionPageViews },
+      { data: viewerProfiles },
     ] = await Promise.all([
       admin.from("property_brochures").select("id, title, slug, property_id, status, properties(name)").eq("organization_id", organizationId),
-      admin.from("buyer_sessions").select("id, brochure_id, device, browser, os, screen_width, screen_height, started_at, property_id, utm_source, metadata").eq("organization_id", organizationId).not("brochure_id", "is", null).order("started_at", { ascending: false }).limit(500),
+      admin.from("buyer_sessions").select("id, brochure_id, lead_id, device, browser, os, screen_width, screen_height, started_at, property_id, utm_source, viewer_name, viewer_phone, metadata").eq("organization_id", organizationId).not("brochure_id", "is", null).order("started_at", { ascending: false }).limit(500),
       admin.from("brochure_page_views").select("page_number, page_category, dwell_seconds, brochure_id, session_id").eq("organization_id", organizationId),
       admin.from("brochure_intent_summaries").select("*").eq("organization_id", organizationId).order("updated_at", { ascending: false }).limit(100),
-      admin.from("brochure_heatmap_points").select("page_number, x, y, brochure_id, session_id").eq("organization_id", organizationId).limit(5000),
+      admin.from("brochure_heatmap_points").select("page_number, x, y, brochure_id, session_id, event_type").eq("organization_id", organizationId).limit(5000),
       admin.from("brochure_sales_alerts").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(50),
       admin.from("brochure_page_views").select("session_id, page_number, page_category, dwell_seconds").eq("organization_id", organizationId).order("dwell_seconds", { ascending: false }),
+      admin.from("brochure_viewer_profiles").select("*").eq("organization_id", organizationId).order("last_seen_at", { ascending: false }).limit(200),
     ]);
 
     const pageStats = new Map<string, { category: string; totalDwell: number; views: number }>();
@@ -337,6 +339,43 @@ export class BrochureIntentService {
     const topPages = [...pageStats.values()].sort((a, b) => b.totalDwell - a.totalDwell).slice(0, 8);
     const hotBuyers = (summaries ?? []).filter((s) => s.intent_band === "hot").length;
 
+    const deviceBreakdown = new Map<string, number>();
+    for (const s of sessions ?? []) {
+      const key = s.device ?? "unknown";
+      deviceBreakdown.set(key, (deviceBreakdown.get(key) ?? 0) + 1);
+    }
+
+    const intentDistribution = [
+      { band: "hot", count: (summaries ?? []).filter((s) => s.intent_band === "hot").length },
+      { band: "warm", count: (summaries ?? []).filter((s) => s.intent_band === "warm").length },
+      { band: "cold", count: (summaries ?? []).filter((s) => s.intent_band === "cold").length },
+    ];
+
+    const identifiedViewers = (sessions ?? [])
+      .filter((s) => s.viewer_name && s.viewer_phone)
+      .map((s) => {
+        const intent = (summaries ?? []).find((i) => i.session_id === s.id);
+        const views = (sessionPageViews ?? []).filter((v) => v.session_id === s.id);
+        const topView = [...views].sort((a, b) => b.dwell_seconds - a.dwell_seconds)[0];
+        return {
+          sessionId: s.id,
+          name: s.viewer_name,
+          phone: s.viewer_phone,
+          brochureId: s.brochure_id,
+          device: s.device,
+          browser: s.browser,
+          os: s.os,
+          startedAt: s.started_at,
+          firstVisit: !(s.metadata as { reopen?: boolean })?.reopen,
+          intentBand: intent?.intent_band ?? "cold",
+          intentScore: intent?.intent_score ?? 0,
+          topPage: topView?.page_category ?? (topView ? `page ${topView.page_number}` : null),
+          topDwellSeconds: topView?.dwell_seconds ?? 0,
+          pageCount: views.length,
+          leadId: s.lead_id,
+        };
+      });
+
     return {
       brochureCount: brochures?.length ?? 0,
       trackedSessions: sessions?.length ?? 0,
@@ -347,6 +386,10 @@ export class BrochureIntentService {
       heatmapPoints: heatmaps ?? [],
       salesAlerts: alerts ?? [],
       sessionPageViews: sessionPageViews ?? [],
+      viewerProfiles: viewerProfiles ?? [],
+      identifiedViewers,
+      deviceBreakdown: [...deviceBreakdown.entries()].map(([device, count]) => ({ device, count })),
+      intentDistribution,
       brochures: brochures ?? [],
     };
   }

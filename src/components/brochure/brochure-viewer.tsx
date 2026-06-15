@@ -23,11 +23,13 @@ function pageMeta(pages: BrochurePage[] = [], pageNumber: number) {
 export function BrochureViewer({
   brochure,
   sessionId,
+  viewerName,
 }: {
   brochure: PropertyBrochure & {
     properties?: { name: string; projects?: { name: string; branding?: { primary_color?: string } } };
   };
   sessionId: string;
+  viewerName?: string;
 }) {
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(1);
@@ -230,6 +232,11 @@ export function BrochureViewer({
     await track({ eventType: "brochure_shared", pageNumber: page, payload: { method: "copy_link", ref_session: sessionId } });
   }
 
+  function changeZoom(next: number, direction: "zoom_in" | "zoom_out") {
+    setZoom(next);
+    track({ heatmap: { pageNumber: page, x: 0.5, y: 0.5, eventType: direction } });
+  }
+
   async function downloadPdf() {
     const a = document.createElement("a");
     a.href = pdfUrl;
@@ -246,7 +253,9 @@ export function BrochureViewer({
     <div className="flex h-[100dvh] flex-col bg-zinc-950 text-white">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <div className="min-w-0">
-          <p className="truncate text-xs text-white/60">{brochure.properties?.projects?.name ?? "Project"}</p>
+          <p className="truncate text-xs text-white/60">
+            {viewerName ? `Viewing as ${viewerName}` : brochure.properties?.projects?.name ?? "Project"}
+          </p>
           <h1
             className="truncate text-sm font-semibold"
             style={brand ? { color: brand } : undefined}
@@ -354,7 +363,7 @@ export function BrochureViewer({
           <button
             type="button"
             className="rounded-md border border-white/15 p-2"
-            onClick={() => setZoom((z) => Math.max(0.6, Number((z - 0.2).toFixed(1))))}
+            onClick={() => changeZoom(Math.max(0.6, Number((zoom - 0.2).toFixed(1))), "zoom_out")}
             aria-label="Zoom out"
           >
             <ZoomOut className="h-4 w-4" />
@@ -367,8 +376,7 @@ export function BrochureViewer({
             value={zoom}
             onChange={(e) => {
               const next = Number(e.target.value);
-              setZoom(next);
-              track({ heatmap: { pageNumber: page, x: 0.5, y: 0.5, eventType: "zoom_focus" } });
+              changeZoom(next, next > zoom ? "zoom_in" : "zoom_out");
             }}
             className="flex-1"
             aria-label="Zoom"
@@ -376,7 +384,7 @@ export function BrochureViewer({
           <button
             type="button"
             className="rounded-md border border-white/15 p-2"
-            onClick={() => setZoom((z) => Math.min(2.4, Number((z + 0.2).toFixed(1))))}
+            onClick={() => changeZoom(Math.min(2.4, Number((zoom + 0.2).toFixed(1))), "zoom_in")}
             aria-label="Zoom in"
           >
             <ZoomIn className="h-4 w-4" />

@@ -88,7 +88,7 @@ export class CRMService {
       name: params.name,
       phone: params.phone,
       email: params.email,
-      source: params.source,
+      source: params.source ?? "brochure",
       campaign: params.campaign,
       lead_status: "new",
       intent_score: 20,
@@ -96,6 +96,42 @@ export class CRMService {
 
     if (error) throw error;
     return data;
+  }
+
+  async findOrCreateLeadByPhone(params: {
+    organizationId: string;
+    propertyId: string;
+    projectId?: string;
+    sessionId: string;
+    name: string;
+    phone: string;
+    campaign?: string;
+  }) {
+    const supabase = createAdminClient();
+    const { data: existing } = await supabase
+      .from("leads")
+      .select("id, total_sessions")
+      .eq("organization_id", params.organizationId)
+      .eq("phone", params.phone)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      await supabase.from("leads").update({
+        name: params.name,
+        session_id: params.sessionId,
+        last_visit: new Date().toISOString(),
+        total_sessions: (existing.total_sessions ?? 1) + 1,
+        updated_at: new Date().toISOString(),
+      }).eq("id", existing.id);
+      return existing;
+    }
+
+    return this.createLead({
+      ...params,
+      source: "brochure",
+    });
   }
 }
 
