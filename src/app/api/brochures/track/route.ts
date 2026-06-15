@@ -47,6 +47,7 @@ export async function POST(req: Request) {
         visibleSections: body.pageView.visibleSections,
         viewId: body.pageView.viewId,
       });
+      await brochureIntentService.refreshSessionIntent(body.sessionId, body.brochureId, body.propertyId, body.organizationId);
       return NextResponse.json({ ok: true, viewId });
     }
 

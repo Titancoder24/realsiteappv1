@@ -30,6 +30,20 @@ export async function POST(req: Request) {
 
     const sessionId = uuidv4();
     const admin = createAdminClient();
+    const ipHash = hashIp(ip);
+
+    const { data: priorSessions } = await admin
+      .from("buyer_sessions")
+      .select("id, started_at")
+      .eq("brochure_id", body.brochureId)
+      .eq("ip_hash", ipHash)
+      .order("started_at", { ascending: false })
+      .limit(1);
+
+    const isReopen = Boolean(priorSessions?.length);
+    const daysSinceLast = priorSessions?.[0]?.started_at
+      ? Math.floor((Date.now() - new Date(priorSessions[0].started_at).getTime()) / 86400000)
+      : 0;
 
     await admin.from("buyer_sessions").insert({
       id: sessionId,
@@ -42,23 +56,40 @@ export async function POST(req: Request) {
       screen_width: body.screenWidth,
       screen_height: body.screenHeight,
       consent_given: true,
-      ip_hash: hashIp(ip),
+      ip_hash: ipHash,
       utm_source: body.utmSource,
       utm_medium: body.utmMedium,
       utm_campaign: body.utmCampaign,
-      metadata: body.referrerSessionId ? { shared_from_session: body.referrerSessionId } : {},
+      metadata: {
+        ...(body.referrerSessionId ? { shared_from_session: body.referrerSessionId } : {}),
+        ...(isReopen ? { reopen: true, days_since_last: daysSinceLast } : {}),
+      },
     });
+
+    const openEvent = body.referrerSessionId
+      ? "brochure_shared_open"
+      : isReopen
+        ? "brochure_reopened"
+        : "brochure_opened";
 
     await brochureIntentService.recordViewerEvent({
       sessionId,
       brochureId: body.brochureId,
       propertyId: body.propertyId,
       organizationId: body.organizationId,
-      eventType: body.referrerSessionId ? "brochure_shared_open" : "brochure_opened",
-      payload: { device: deviceInfo, screen: { width: body.screenWidth, height: body.screenHeight } },
+      eventType: openEvent,
+      payload: {
+        device: deviceInfo,
+        screen: { width: body.screenWidth, height: body.screenHeight },
+        daysSinceLast: isReopen ? daysSinceLast : undefined,
+      },
     });
 
-    return NextResponse.json({ sessionId });
+    if (isReopen || openEvent === "brochure_shared_open") {
+      await brochureIntentService.refreshSessionIntent(sessionId, body.brochureId, body.propertyId, body.organizationId);
+    }
+
+    return NextResponse.json({ sessionId, isReopen, daysSinceLast });
   } catch (err) {
     return jsonError(err instanceof Error ? err.message : "Session failed", 500);
   }

@@ -1,5 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { GEMINI_35_FLASH_MODEL, sendChatCompletion } from "@/lib/openrouter";
 import { crmService } from "./crm.service";
+import { queueBrochureSalesAlert } from "./brochure-alert.service";
 import type { BrochureIntentSummary } from "@/types/brochure-intelligence";
 
 const CATEGORY_WEIGHTS: Record<string, number> = {
@@ -70,6 +72,49 @@ export class BrochureIntentService {
     });
 
     return data?.id;
+  }
+
+  private async generateAiSalesSummary(params: {
+    topPages: { page_number: number; category?: string; dwell_seconds: number }[];
+    intentBand: string;
+    intentScore: number;
+    eventTypes: Set<string>;
+    device?: { device?: string; browser?: string; os?: string };
+    visitCount: number;
+  }) {
+    const pageLines = params.topPages.map((p) => {
+      const label = p.category?.replace(/_/g, " ") ?? `page ${p.page_number}`;
+      const mins = Math.floor(p.dwell_seconds / 60);
+      const secs = p.dwell_seconds % 60;
+      return `${label}: ${mins}m ${secs}s`;
+    }).join(", ");
+
+    try {
+      const result = await sendChatCompletion({
+        model: GEMINI_35_FLASH_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: "You are a real estate sales intelligence assistant. Write one concise buyer intent summary (max 2 sentences) and one recommended sales action (max 1 sentence). Be specific about layout, pricing, payment plan when relevant. No fluff.",
+          },
+          {
+            role: "user",
+            content: `Intent: ${params.intentBand} (${params.intentScore}/100). Visits: ${params.visitCount}. Top pages: ${pageLines || "none yet"}. Events: ${[...params.eventTypes].join(", ") || "none"}. Device: ${params.device?.device ?? "unknown"} / ${params.device?.browser ?? "unknown"}.`,
+          },
+        ],
+        maxTokens: 180,
+      });
+
+      const text = result.choices?.[0]?.message?.content?.trim();
+      if (!text) return null;
+      const parts = text.split(/\n+/).map((s: string) => s.trim()).filter(Boolean);
+      return {
+        summary_text: parts[0] ?? text,
+        recommended_action: parts[1] ?? "Call the buyer today while interest is high.",
+      };
+    } catch {
+      return null;
+    }
   }
 
   async recordHeatmapPoint(params: {
@@ -146,8 +191,8 @@ export class BrochureIntentService {
 
     const [{ data: pageViews }, { data: events }, { data: session }] = await Promise.all([
       admin.from("brochure_page_views").select("page_number, page_category, dwell_seconds").eq("session_id", sessionId).eq("brochure_id", brochureId),
-      admin.from("brochure_viewer_events").select("event_type").eq("session_id", sessionId).eq("brochure_id", brochureId),
-      admin.from("buyer_sessions").select("lead_id, started_at").eq("id", sessionId).single(),
+      admin.from("brochure_viewer_events").select("event_type, payload").eq("session_id", sessionId).eq("brochure_id", brochureId),
+      admin.from("buyer_sessions").select("lead_id, started_at, device, browser, os, brochure_id").eq("id", sessionId).single(),
     ]);
 
     const pageDwell = new Map<number, { category?: string; dwell: number }>();
@@ -202,12 +247,24 @@ export class BrochureIntentService {
 
     const { data: prior } = await admin
       .from("brochure_intent_summaries")
-      .select("visit_count")
+      .select("visit_count, intent_band")
       .eq("session_id", sessionId)
       .eq("brochure_id", brochureId)
       .maybeSingle();
 
-    const visit_count = (prior?.visit_count ?? 0) + (eventTypes.has("brochure_reopened") ? 1 : 0) || 1;
+    const visit_count = Math.max((prior?.visit_count ?? 0) + (eventTypes.has("brochure_reopened") ? 1 : 0), 1);
+
+    const ai = await this.generateAiSalesSummary({
+      topPages,
+      intentBand: intent_band,
+      intentScore: score,
+      eventTypes,
+      device: session ? { device: session.device ?? undefined, browser: session.browser ?? undefined, os: session.os ?? undefined } : undefined,
+      visitCount: visit_count,
+    });
+
+    const finalSummary = ai?.summary_text ?? summary_text;
+    const finalAction = ai?.recommended_action ?? recommended_action;
 
     const { data } = await admin.from("brochure_intent_summaries").upsert({
       session_id: sessionId,
@@ -218,14 +275,28 @@ export class BrochureIntentService {
       intent_score: score,
       intent_band,
       top_pages: topPages,
-      summary_text,
-      recommended_action,
+      summary_text: finalSummary,
+      recommended_action: finalAction,
       visit_count: Math.max(visit_count, 1),
       updated_at: new Date().toISOString(),
     }, { onConflict: "session_id,brochure_id" }).select().single();
 
     if (session?.lead_id) {
       await crmService.refreshIntentScore(session.lead_id);
+    }
+
+    const becameHot = intent_band === "hot" && prior?.intent_band !== "hot";
+    if (becameHot || eventTypes.has("brochure_reopened")) {
+      await queueBrochureSalesAlert({
+        organizationId,
+        brochureId,
+        sessionId,
+        intentBand: intent_band,
+        intentScore: score,
+        alertType: eventTypes.has("brochure_reopened") ? "brochure_reopened" : "hot_intent",
+        message: finalSummary,
+        recommendedAction: finalAction,
+      });
     }
 
     return data as BrochureIntentSummary;
@@ -240,12 +311,16 @@ export class BrochureIntentService {
       { data: pageViews },
       { data: summaries },
       { data: heatmaps },
+      { data: alerts },
+      { data: sessionPageViews },
     ] = await Promise.all([
-      admin.from("property_brochures").select("id, title, property_id, status, properties(name)").eq("organization_id", organizationId),
-      admin.from("buyer_sessions").select("id, brochure_id, device, browser, os, started_at, property_id").eq("organization_id", organizationId).not("brochure_id", "is", null).order("started_at", { ascending: false }).limit(500),
-      admin.from("brochure_page_views").select("page_number, page_category, dwell_seconds, brochure_id").eq("organization_id", organizationId),
+      admin.from("property_brochures").select("id, title, slug, property_id, status, properties(name)").eq("organization_id", organizationId),
+      admin.from("buyer_sessions").select("id, brochure_id, device, browser, os, screen_width, screen_height, started_at, property_id, utm_source, metadata").eq("organization_id", organizationId).not("brochure_id", "is", null).order("started_at", { ascending: false }).limit(500),
+      admin.from("brochure_page_views").select("page_number, page_category, dwell_seconds, brochure_id, session_id").eq("organization_id", organizationId),
       admin.from("brochure_intent_summaries").select("*").eq("organization_id", organizationId).order("updated_at", { ascending: false }).limit(100),
-      admin.from("brochure_heatmap_points").select("page_number, x, y, brochure_id").eq("organization_id", organizationId).limit(2000),
+      admin.from("brochure_heatmap_points").select("page_number, x, y, brochure_id, session_id").eq("organization_id", organizationId).limit(5000),
+      admin.from("brochure_sales_alerts").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(50),
+      admin.from("brochure_page_views").select("session_id, page_number, page_category, dwell_seconds").eq("organization_id", organizationId).order("dwell_seconds", { ascending: false }),
     ]);
 
     const pageStats = new Map<string, { category: string; totalDwell: number; views: number }>();
@@ -270,6 +345,8 @@ export class BrochureIntentService {
       recentSessions: sessions ?? [],
       intentSummaries: summaries ?? [],
       heatmapPoints: heatmaps ?? [],
+      salesAlerts: alerts ?? [],
+      sessionPageViews: sessionPageViews ?? [],
       brochures: brochures ?? [],
     };
   }

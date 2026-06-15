@@ -41,9 +41,17 @@ export function BrochureViewer({
   const activeViewId = useRef<string | undefined>(undefined);
   const lastActivity = useRef(Date.now());
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const touchStartX = useRef<number | null>(null);
+  const maxScrollDepth = useRef(0);
 
   const pdfUrl = `/api/brochures/public/${brochure.slug}/file`;
+
+  function trackedShareUrl() {
+    const url = new URL(window.location.href);
+    url.searchParams.set("ref_session", sessionId);
+    return url.toString();
+  }
 
   const track = useCallback(
     async (body: Record<string, unknown>) => {
@@ -80,6 +88,7 @@ export function BrochureViewer({
             pageCategory: meta?.category,
             dwellSeconds,
             zoomLevelMax: zoom,
+            scrollDepthMax: maxScrollDepth.current,
           },
         }),
       });
@@ -96,6 +105,7 @@ export function BrochureViewer({
       if (nextPage != null) {
         activeViewId.current = undefined;
         pageEnteredAt.current = Date.now();
+        maxScrollDepth.current = 0;
         setPage(nextPage);
       }
     },
@@ -204,20 +214,20 @@ export function BrochureViewer({
   }
 
   async function shareLink() {
-    const url = window.location.href;
+    const url = trackedShareUrl();
     if (navigator.share) {
       await navigator.share({ title: brochure.title, url });
     } else {
       await navigator.clipboard.writeText(url);
       toast.success("Share link copied");
     }
-    await track({ eventType: "brochure_shared", pageNumber: page, payload: { method: "native_share" } });
+    await track({ eventType: "brochure_shared", pageNumber: page, payload: { method: "native_share", ref_session: sessionId } });
   }
 
   async function copyLink() {
-    await navigator.clipboard.writeText(window.location.href);
-    toast.success("Tracked link copied");
-    await track({ eventType: "brochure_shared", pageNumber: page, payload: { method: "copy_link" } });
+    await navigator.clipboard.writeText(trackedShareUrl());
+    toast.success("Tracked link copied — forwards are attributed");
+    await track({ eventType: "brochure_shared", pageNumber: page, payload: { method: "copy_link", ref_session: sessionId } });
   }
 
   async function downloadPdf() {
@@ -273,9 +283,18 @@ export function BrochureViewer({
       </header>
 
       <div
+        ref={scrollRef}
         className="relative flex-1 overflow-auto bg-zinc-900"
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
+        onScroll={(e) => {
+          lastActivity.current = Date.now();
+          const el = e.currentTarget;
+          const depth = el.scrollHeight <= el.clientHeight
+            ? 1
+            : (el.scrollTop + el.clientHeight) / el.scrollHeight;
+          maxScrollDepth.current = Math.max(maxScrollDepth.current, Math.min(1, depth));
+        }}
       >
         {loading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-white/80">
@@ -346,7 +365,11 @@ export function BrochureViewer({
             max={2.4}
             step={0.1}
             value={zoom}
-            onChange={(e) => setZoom(Number(e.target.value))}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              setZoom(next);
+              track({ heatmap: { pageNumber: page, x: 0.5, y: 0.5, eventType: "zoom_focus" } });
+            }}
             className="flex-1"
             aria-label="Zoom"
           />

@@ -10,9 +10,9 @@ import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { ExternalLink, Upload, Copy, Link2 } from "lucide-react";
 import { toast } from "sonner";
-import { createClient } from "@/lib/supabase/client";
 import { getPdfPageCount } from "@/lib/brochure/pdf-client";
 import { isPdfFile, pdfContentType } from "@/lib/brochure/pdf-utils";
+import { BrochureBuyerSessions, BrochureHeatmapPanel } from "@/components/brochure/brochure-buyer-sessions";
 
 interface Analytics {
   brochureCount: number;
@@ -28,6 +28,21 @@ interface Analytics {
     recommended_action?: string;
     top_pages?: { page_number: number; category?: string; dwell_seconds: number }[];
   }[];
+  recentSessions: {
+    id: string;
+    brochure_id?: string | null;
+    device?: string | null;
+    browser?: string | null;
+    os?: string | null;
+    screen_width?: number | null;
+    screen_height?: number | null;
+    started_at?: string;
+    utm_source?: string | null;
+    metadata?: { reopen?: boolean; days_since_last?: number; shared_from_session?: string };
+  }[];
+  sessionPageViews: { session_id: string; page_number: number; page_category?: string | null; dwell_seconds: number }[];
+  heatmapPoints: { page_number: number; x: number; y: number; brochure_id?: string }[];
+  salesAlerts: { id: string; alert_type: string; message: string; recommended_action?: string; intent_band: string; created_at?: string }[];
   brochures: { id: string; title: string; slug: string; status: string; properties?: { name: string } }[];
 }
 
@@ -96,14 +111,17 @@ export function BrochureIntelligenceDashboard() {
       const prep = await prepRes.json();
       if (!prepRes.ok) throw new Error(prep.error ?? "Could not prepare upload");
 
-      const supabase = createClient();
-      const { error: storageError } = await supabase.storage
-        .from("media")
-        .uploadToSignedUrl(prep.path, prep.token, file, {
-          contentType: prep.contentType,
-          upsert: false,
+      let uploaded = false;
+      if (prep.signedUrl) {
+        const uploadRes = await fetch(prep.signedUrl, {
+          method: "PUT",
+          headers: { "Content-Type": prep.contentType },
+          body: file,
         });
-      if (storageError) {
+        uploaded = uploadRes.ok;
+      }
+
+      if (!uploaded) {
         if (file.size <= 4 * 1024 * 1024) {
           const form = new FormData();
           form.append("file", file);
@@ -113,12 +131,13 @@ export function BrochureIntelligenceDashboard() {
           form.append("publish", "true");
           const fallbackRes = await fetch("/api/brochures", { method: "POST", body: form });
           const fallbackJson = await fallbackRes.json();
-          if (!fallbackRes.ok) throw new Error(fallbackJson.error ?? storageError.message);
+          if (!fallbackRes.ok) throw new Error(fallbackJson.error ?? "Storage upload failed");
           toast.success("Brochure published — copy the tracked link below");
+          setTitle("");
           load();
           return;
         }
-        throw new Error(storageError.message);
+        throw new Error("Direct storage upload failed. Try a smaller PDF or contact support.");
       }
 
       const createRes = await fetch("/api/brochures", {
@@ -138,6 +157,7 @@ export function BrochureIntelligenceDashboard() {
       if (!createRes.ok) throw new Error(created.error ?? "Could not save brochure");
 
       toast.success("Brochure published — copy the tracked link below");
+      setTitle("");
       load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
@@ -169,8 +189,8 @@ export function BrochureIntelligenceDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold sm:text-2xl">Buyer Intent Analytics</h1>
-        <p className="text-sm text-muted-foreground">Know which buyer is serious before your competitor calls them — property brochure intelligence.</p>
+        <h1 className="text-xl font-semibold sm:text-2xl">Buyer Intent Analytics for Property Brochures</h1>
+        <p className="text-sm text-muted-foreground">Know which buyer is serious before your competitor calls them — page views, heatmaps, device intel, AI summaries, and sales alerts.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -239,6 +259,44 @@ export function BrochureIntelligenceDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle>Sales alerts</CardTitle><CardDescription>Hot buyers, re-opens, and shared opens</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            {(data?.salesAlerts ?? []).slice(0, 8).map((a) => (
+              <div key={a.id} className="rounded-lg border p-3">
+                <div className="mb-1 flex items-center gap-2">
+                  <Badge>{a.alert_type.replace(/_/g, " ")}</Badge>
+                  <Badge variant="outline">{a.intent_band}</Badge>
+                </div>
+                <p className="text-sm">{a.message}</p>
+                {a.recommended_action && <p className="mt-1 text-xs text-muted-foreground">→ {a.recommended_action}</p>}
+              </div>
+            ))}
+            {!data?.salesAlerts?.length && <p className="text-sm text-muted-foreground">Alerts appear when a buyer becomes hot or re-opens a brochure.</p>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Page heatmap (aggregated taps)</CardTitle></CardHeader>
+          <CardContent>
+            <BrochureHeatmapPanel points={data?.heatmapPoints ?? []} pageNumber={1} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle>Buyer sessions</CardTitle><CardDescription>Per-client page focus, device info, and intent</CardDescription></CardHeader>
+        <CardContent>
+          <BrochureBuyerSessions
+            sessions={data?.recentSessions ?? []}
+            pageViews={data?.sessionPageViews ?? []}
+            intents={(data?.intentSummaries ?? []).map((s) => ({ session_id: s.session_id, intent_band: s.intent_band, intent_score: s.intent_score }))}
+            brochures={(data?.brochures ?? []).map((b) => ({ id: b.id, title: b.title }))}
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader><CardTitle>AI buyer intent summaries</CardTitle></CardHeader>

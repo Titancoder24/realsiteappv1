@@ -36,6 +36,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   return withAuth(async (profile) => {
+    if (!profile.organization_id) return jsonError("No organization", 400);
+
     const contentType = req.headers.get("content-type") ?? "";
 
     if (contentType.includes("application/json")) {
