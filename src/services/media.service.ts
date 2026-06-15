@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { worldLabsService } from "./world-labs.service";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg", "video/mp4", "video/quicktime"];
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/jpg", "video/mp4", "video/quicktime", "application/pdf"];
 
 export function validateMediaFile(file: File) {
   if (file.size > MAX_FILE_SIZE) throw new Error(`File too large. Max ${MAX_FILE_SIZE / 1024 / 1024}MB`);
@@ -29,7 +29,7 @@ export class MediaService {
       file_url: publicUrl,
       content_type: file.type,
       file_size: file.size,
-      asset_type: file.type.startsWith("image/") ? "image" : "video",
+      asset_type: file.type.startsWith("image/") ? "image" : file.type === "application/pdf" ? "document" : "video",
       metadata: { thumbnail_url: file.type.startsWith("image/") ? publicUrl : null },
     }).select().single();
 

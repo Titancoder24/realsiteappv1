@@ -10,6 +10,13 @@ interface Event {
 
 const LABELS: Record<string, string> = {
   session_started: "Opened property link",
+  brochure_opened: "Opened property brochure",
+  brochure_reopened: "Re-opened brochure",
+  brochure_page_viewed: "Viewed brochure page",
+  brochure_downloaded: "Downloaded brochure",
+  brochure_shared: "Shared brochure",
+  brochure_pricing_focus: "Focused on pricing section",
+  brochure_floor_plan_focus: "Focused on floor plan",
   room_entered: "Entered room",
   ai_question: "Asked AI a question",
   floor_map_opened: "Opened floor map",
