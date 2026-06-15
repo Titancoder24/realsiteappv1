@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { ExternalLink, Upload } from "lucide-react";
+import { ExternalLink, Upload, Copy, Link2 } from "lucide-react";
 import { toast } from "sonner";
+import { getPdfPageCount } from "@/lib/brochure/pdf-client";
 
 interface Analytics {
   brochureCount: number;
@@ -34,6 +35,7 @@ export function BrochureIntelligenceDashboard() {
   const [propertyId, setPropertyId] = useState("");
   const [title, setTitle] = useState("");
   const [pageCount, setPageCount] = useState("8");
+  const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
 
   const load = () => {
     fetch("/api/brochures/analytics")
@@ -44,26 +46,66 @@ export function BrochureIntelligenceDashboard() {
 
   useEffect(() => { load(); }, []);
 
-  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  useEffect(() => {
+    fetch("/api/properties")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { id: string; name: string }[]) => setProperties(rows))
+      .catch(() => {});
+  }, []);
+
+  async function onFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !propertyId || !title) return toast.error("Property ID, title, and PDF required");
+    if (!file) return;
+    const inferredTitle = file.name.replace(/\.pdf$/i, "");
+    if (!title) setTitle(inferredTitle);
+    try {
+      const count = await getPdfPageCount(file);
+      setPageCount(String(count));
+      await uploadBrochure(file, count);
+    } catch {
+      toast.error("Could not read PDF — check the file and try again");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  async function uploadBrochure(file: File, count?: number) {
+    const resolvedTitle = title || file.name.replace(/\.pdf$/i, "");
+    if (!propertyId || !resolvedTitle) {
+      toast.error("Select a property and title before uploading");
+      return;
+    }
     setUploading(true);
     const form = new FormData();
     form.append("file", file);
     form.append("propertyId", propertyId);
-    form.append("title", title);
-    form.append("pageCount", pageCount);
+    form.append("title", resolvedTitle);
+    form.append("pageCount", String(count ?? pageCount));
     const res = await fetch("/api/brochures", { method: "POST", body: form });
     const json = await res.json();
     setUploading(false);
     if (!res.ok) return toast.error(json.error ?? "Upload failed");
-    toast.success("Brochure uploaded");
+    toast.success("Brochure published — copy the tracked link below");
     await fetch(`/api/brochures/${json.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "published" }),
     });
     load();
+  }
+
+  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    await onFileSelect(e);
+  }
+
+  function shareUrl(slug: string) {
+    if (typeof window === "undefined") return `/brochure/${slug}`;
+    return `${window.location.origin}/brochure/${slug}`;
+  }
+
+  async function copyShareLink(slug: string) {
+    await navigator.clipboard.writeText(shareUrl(slug));
+    toast.success("Tracked share link copied");
   }
 
   const chartData = (data?.topPages ?? []).map((p) => ({
@@ -114,13 +156,28 @@ export function BrochureIntelligenceDashboard() {
         <Card>
           <CardHeader><CardTitle>Upload tracked brochure</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            <Input placeholder="Property UUID" value={propertyId} onChange={(e) => setPropertyId(e.target.value)} />
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={propertyId}
+              onChange={(e) => setPropertyId(e.target.value)}
+            >
+              <option value="">Select property</option>
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
             <Input placeholder="Brochure title" value={title} onChange={(e) => setTitle(e.target.value)} />
-            <Input placeholder="Page count" value={pageCount} onChange={(e) => setPageCount(e.target.value)} />
+            <Input placeholder="Page count (auto-detected from PDF)" value={pageCount} onChange={(e) => setPageCount(e.target.value)} />
             <label className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted">
               <Upload className="h-4 w-4" />
               {uploading ? "Uploading…" : "Upload PDF brochure"}
-              <input type="file" accept="application/pdf" className="hidden" onChange={onUpload} disabled={uploading} />
+              <input
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={onUpload}
+                disabled={uploading}
+              />
             </label>
           </CardContent>
         </Card>
@@ -148,15 +205,24 @@ export function BrochureIntelligenceDashboard() {
         <CardContent className="space-y-3">
           {(data?.brochures ?? []).map((b) => (
             <div key={b.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="font-medium">{b.title}</p>
                 <p className="text-xs text-muted-foreground">{b.properties?.name} · {b.status}</p>
+                <p className="mt-1 flex items-center gap-1 truncate font-mono text-xs text-muted-foreground">
+                  <Link2 className="h-3 w-3 shrink-0" />
+                  {shareUrl(b.slug)}
+                </p>
               </div>
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/brochure/${b.slug}`} target="_blank">
-                  <ExternalLink className="mr-1 h-3.5 w-3.5" /> Open
-                </Link>
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => copyShareLink(b.slug)}>
+                  <Copy className="mr-1 h-3.5 w-3.5" /> Copy link
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/brochure/${b.slug}`} target="_blank">
+                    <ExternalLink className="mr-1 h-3.5 w-3.5" /> Open
+                  </Link>
+                </Button>
+              </div>
             </div>
           ))}
         </CardContent>

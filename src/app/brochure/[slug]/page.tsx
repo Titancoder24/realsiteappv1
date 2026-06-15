@@ -22,6 +22,8 @@ function BrochurePublicContent() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     fetch(`/api/brochures/public/${slug}`)
@@ -32,24 +34,36 @@ function BrochurePublicContent() {
 
   async function startSession() {
     if (!brochure) return;
-    const res = await fetch("/api/brochures/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        brochureId: brochure.id,
-        propertyId: brochure.property_id,
-        organizationId: brochure.organization_id,
-        consentGiven: true,
-        utmSource: searchParams.get("utm_source") ?? undefined,
-        utmMedium: searchParams.get("utm_medium") ?? undefined,
-        utmCampaign: searchParams.get("utm_campaign") ?? undefined,
-        screenWidth: window.screen.width,
-        screenHeight: window.screen.height,
-        referrerSessionId: searchParams.get("ref_session") ?? undefined,
-      }),
-    });
-    const data = await res.json();
-    if (res.ok) setSessionId(data.sessionId);
+    setStarting(true);
+    setSessionError(null);
+    try {
+      const res = await fetch("/api/brochures/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brochureId: brochure.id,
+          propertyId: brochure.property_id,
+          organizationId: brochure.organization_id,
+          consentGiven: true,
+          utmSource: searchParams.get("utm_source") ?? undefined,
+          utmMedium: searchParams.get("utm_medium") ?? undefined,
+          utmCampaign: searchParams.get("utm_campaign") ?? undefined,
+          screenWidth: window.screen.width,
+          screenHeight: window.screen.height,
+          referrerSessionId: searchParams.get("ref_session") ?? undefined,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSessionId(data.sessionId);
+      } else {
+        setSessionError(data.error ?? "Could not start brochure session. Please try again.");
+      }
+    } catch {
+      setSessionError("Network error. Check your connection and try again.");
+    } finally {
+      setStarting(false);
+    }
   }
 
   if (loading) {
@@ -74,7 +88,10 @@ function BrochurePublicContent() {
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1" />
             I understand engagement analytics may be collected for this brochure view.
           </label>
-          <Button className="w-full" disabled={!consent} onClick={startSession}>View brochure</Button>
+          {sessionError && <p className="text-sm text-red-400">{sessionError}</p>}
+          <Button className="w-full" disabled={!consent || starting} onClick={startSession}>
+            {starting ? "Opening…" : "View brochure"}
+          </Button>
         </div>
       </div>
     );
