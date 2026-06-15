@@ -7,6 +7,8 @@ import { WalkthroughRagChat } from "@/components/walkthrough/walkthrough-rag-cha
 import { WalkthroughAnnotationEditor } from "@/components/walkthrough/walkthrough-annotation-editor";
 import type { WalkthroughChecklist, WalkthroughImage, WalkthroughScene, WalkthroughWizardStep } from "@/types/cinematic-walkthrough";
 import { WALKTHROUGH_MOTION_PRESETS, WALKTHROUGH_WIZARD_STEPS } from "@/types/cinematic-walkthrough";
+import type { WalkthroughMotionType } from "@/types/cinematic-walkthrough";
+import { veoPromptForMotion } from "@/lib/veo-motion-prompts";
 import { Check, Clapperboard, ExternalLink, GripVertical, Loader2, Sparkles, Upload, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import "@/styles/walkthrough-studio.css";
@@ -40,8 +42,10 @@ export function CinematicWalkthroughWizard({
     checklist?.images_uploaded &&
     checklist?.scenes_created &&
     checklist?.property_rag_added &&
-    checklist?.motion_added,
+    checklist?.motion_videos_generated,
   );
+
+  const motionReadyCount = scenes.filter((s) => s.video_url).length;
 
   const load = useCallback(async () => {
     const [imgRes, sceneRes, checkRes, jobsRes] = await Promise.all([
@@ -114,7 +118,7 @@ export function CinematicWalkthroughWizard({
       }
       setGeneratingMotion(false);
       if (data.completed > 0) toast.success(`Motion ready for ${data.completed} scene${data.completed === 1 ? "" : "s"}`);
-      if (data.failed > 0) toast.warning(`${data.failed} motion job${data.failed === 1 ? "" : "s"} failed — CSS fallback will be used`);
+      if (data.failed > 0) toast.warning(`${data.failed} Veo job${data.failed === 1 ? "" : "s"} failed — regenerate motion before publishing`);
     }
   }
 
@@ -125,6 +129,14 @@ export function CinematicWalkthroughWizard({
     }, 4000);
     pollVideoJobs().catch(() => {});
   }
+
+  useEffect(() => {
+    const pending = videoJobs.some((j) => ["queued", "submitted", "processing"].includes(j.status));
+    if (pending && !pollRef.current) {
+      setGeneratingMotion(true);
+      startVideoPolling();
+    }
+  }, [videoJobs]);
 
   async function onFilesSelected(files: FileList | null) {
     if (!files?.length) return;
@@ -188,9 +200,23 @@ export function CinematicWalkthroughWizard({
       }
       const count = data.scenes?.length ?? 0;
       if (!count) throw new Error("No scenes were created — check your images and try again");
-      toast.success(`Created ${count} scenes`);
+      toast.success(`Created ${count} scenes — generating Veo motion clips`);
       await load();
-      setStep("arrange");
+      setStep("motion");
+      setGeneratingMotion(true);
+      const motionRes = await fetch("/api/walkthrough/video/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ experience_id: experienceId }),
+      });
+      const motionData = await motionRes.json();
+      if (motionRes.ok) {
+        toast.success(`Queued ${motionData.queued ?? 0} Veo video jobs`);
+        startVideoPolling();
+      } else {
+        toast.warning(motionData.error ?? "Scene plan saved — queue motion manually");
+        setGeneratingMotion(false);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Scene planning failed");
     } finally {
@@ -216,10 +242,14 @@ export function CinematicWalkthroughWizard({
   }
 
   async function setSceneMotion(sceneId: string, motionType: string) {
+    const scene = scenes.find((s) => s.id === sceneId);
+    const veoPrompt = scene
+      ? veoPromptForMotion(scene.room_type ?? "room", scene.title, motionType as WalkthroughMotionType)
+      : undefined;
     await fetch(`/api/walkthrough/scenes/${sceneId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ motion_type: motionType }),
+      body: JSON.stringify({ motion_type: motionType, ...(veoPrompt ? { veo_prompt: veoPrompt } : {}) }),
     });
     await load();
   }
@@ -242,6 +272,28 @@ export function CinematicWalkthroughWizard({
       body: JSON.stringify({ [flag]: true }),
     });
     await load();
+  }
+
+  async function openPreview() {
+    try {
+      const res = await fetch(`/api/walkthrough/preview/${experienceId}`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Preview failed");
+
+      const path = data.previewUrl ?? `/walkthrough/${data.slug ?? experienceId}?preview=1`;
+      const url = path.startsWith("http") ? path : `${window.location.origin}${path}`;
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        toast.error("Pop-up blocked — allow pop-ups, or copy this link", {
+          description: url,
+        });
+        return;
+      }
+
+      await markChecklistFlag("viewer_previewed");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Preview failed");
+    }
   }
 
   async function updateSceneVeoPrompt(sceneId: string, veoPrompt: string) {
@@ -276,16 +328,12 @@ export function CinematicWalkthroughWizard({
       <header className="wt-header">
         <div>
           <h1 className="text-lg font-semibold">Property Walkthrough</h1>
-          <p className="text-sm text-muted-foreground">360° Capture · Upload normal images → AI plan → Veo motion → annotations → publish</p>
+          <p className="text-sm text-muted-foreground">Upload listing photos → Gemini plans the tour → Veo 3.1 Lite builds scroll-controlled video motion</p>
         </div>
         <div className="wt-btn-stack sm:flex-row">
-          {slug && (
-            <Button variant="outline" size="sm" className="min-h-[44px]" asChild>
-              <a href={`/walkthrough/${slug}?preview=1`} target="_blank" rel="noreferrer">
-                <ExternalLink className="mr-1 h-4 w-4" /> Preview
-              </a>
-            </Button>
-          )}
+          <Button variant="outline" size="sm" className="min-h-[44px]" onClick={openPreview}>
+            <ExternalLink className="mr-1 h-4 w-4" /> Preview
+          </Button>
           <Button size="sm" className="min-h-[44px]" onClick={publish} disabled={!canPublish}>Publish</Button>
         </div>
       </header>
@@ -309,8 +357,8 @@ export function CinematicWalkthroughWizard({
         {step === "upload" && (
           <div className="space-y-4">
             <div className="wt-card">
-              <h2 className="font-medium">Add property images</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Upload 1–35 photos — phone, DSLR, brochure, drone, any listing images you own.</p>
+              <h2 className="font-medium">Add listing photos</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Upload 1–35 property photos (Zillow-style listing images). Gemini 3.5 Flash maps room-by-room transitions; Veo turns each into a motion clip.</p>
               <div className="mt-4">
                 <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 px-6 py-10 hover:bg-zinc-100">
                   <Upload className="mb-2 h-8 w-8 text-zinc-400" />
@@ -463,8 +511,11 @@ export function CinematicWalkthroughWizard({
           <div className="space-y-4">
             <div className="wt-card flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="font-medium">Generate motion assets</h2>
-                <p className="text-sm text-muted-foreground">Veo 3.1 Lite creates short motion clips per scene (16:9 landscape or 9:16 portrait). CSS fallback used until ready.</p>
+                <h2 className="font-medium">Generate video motion (Veo 3.1 Lite)</h2>
+                <p className="text-sm text-muted-foreground">
+                  Each scene becomes a short motion clip. Buyers scroll to scrub through the video walkthrough.
+                  {scenes.length > 0 && ` ${motionReadyCount}/${scenes.length} clips ready.`}
+                </p>
               </div>
               <Button
                 disabled={generatingMotion || !scenes.length}
@@ -606,19 +657,11 @@ export function CinematicWalkthroughWizard({
         {step === "preview" && (
           <div className="space-y-4">
             <div className="wt-card">
-              <h2 className="font-medium">Test AI & preview</h2>
-              <p className="text-sm text-muted-foreground">Scroll through the cinematic walkthrough as buyers will see it, and test the AI assistant.</p>
-              {slug && (
-                <Button
-                  className="mt-4"
-                  onClick={async () => {
-                    window.open(`/walkthrough/${slug}?preview=1`, "_blank", "noopener,noreferrer");
-                    await markChecklistFlag("viewer_previewed");
-                  }}
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" /> Open preview
-                </Button>
-              )}
+              <h2 className="font-medium">Test scroll-controlled preview</h2>
+              <p className="text-sm text-muted-foreground">Open the hosted walkthrough — scroll scrubs each Veo clip room-by-room. Toggle Walk Mode to jump between rooms.</p>
+              <Button className="mt-4" onClick={openPreview}>
+                <ExternalLink className="mr-2 h-4 w-4" /> Open preview
+              </Button>
             </div>
             <div className="wt-card space-y-3">
               <h3 className="text-sm font-medium">Quick AI test</h3>

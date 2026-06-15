@@ -84,15 +84,18 @@ export async function refreshWalkthroughChecklist(experienceId: string) {
   const { data: exp } = await admin.from("experiences").select("status").eq("id", experienceId).single();
   const warnings: string[] = [];
   const hasMotionVideos = (sceneCount ?? 0) > 0 && (motionCount ?? 0) > 0;
-  const motionFallbackOk = (sceneCount ?? 0) > 0;
+  const allMotionReady = (sceneCount ?? 0) > 0 && (motionCount ?? 0) >= (sceneCount ?? 0);
+  if ((sceneCount ?? 0) > 0 && !allMotionReady) {
+    warnings.push(`Veo motion: ${motionCount ?? 0}/${sceneCount ?? 0} scenes have video clips`);
+  }
 
   const checklist = {
     images_uploaded: (imageCount ?? 0) > 0,
     images_enhanced: (imageCount ?? 0) > 0 && (enhancedCount ?? 0) >= (imageCount ?? 0),
     scenes_created: (sceneCount ?? 0) > 0,
     scene_order_approved: (sceneCount ?? 0) > 0,
-    motion_added: motionFallbackOk,
-    motion_videos_generated: hasMotionVideos,
+    motion_added: allMotionReady,
+    motion_videos_generated: allMotionReady,
     annotations_added: (annCount ?? 0) > 0,
     property_rag_added: (ragCount ?? 0) >= 3,
     ai_tested: existingChecklist?.ai_tested ?? false,
@@ -100,8 +103,8 @@ export async function refreshWalkthroughChecklist(experienceId: string) {
     ready_to_publish:
       (imageCount ?? 0) > 0 &&
       (sceneCount ?? 0) > 0 &&
+      allMotionReady &&
       (ragCount ?? 0) >= 3 &&
-      (hasMotionVideos || motionFallbackOk) &&
       exp?.status !== "published",
     warnings,
     updated_at: new Date().toISOString(),

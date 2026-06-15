@@ -28,7 +28,7 @@ function toPropertyScene(scene: WalkthroughScene, isMobile: boolean): PropertySc
     scene_order: scene.scene_order,
     is_start_scene: scene.is_start_scene,
     motion_type: scene.motion_type as PropertyScene["motion_type"],
-    motion_config: { duration: scene.duration ?? 5, easing: "ease-in-out" } as PropertyScene["motion_config"],
+    motion_config: { duration: scene.duration ?? 6, easing: "ease-in-out" } as PropertyScene["motion_config"],
     duration: scene.duration,
     edit_config: {} as PropertyScene["edit_config"],
     mobile_crop: scene.mobile_crop ?? { x: 0, y: 0, width: 1, height: 1 },
@@ -66,6 +66,41 @@ function sceneVideoUrl(scene: WalkthroughScene, isMobile: boolean) {
   return scene.video_url_1080p ?? scene.video_url ?? scene.video_url_720p;
 }
 
+function computeScrollState(
+  container: HTMLDivElement,
+  sections: (HTMLDivElement | null)[],
+  sceneCount: number,
+  walkMode: boolean,
+) {
+  const vh = container.clientHeight;
+  const scrollTop = container.scrollTop;
+
+  if (walkMode) {
+    const idx = Math.min(sceneCount - 1, Math.max(0, Math.round(scrollTop / Math.max(vh, 1))));
+    return { activeIndex: idx, scrubProgress: 0 };
+  }
+
+  let activeIndex = 0;
+  let scrubProgress = 0;
+
+  for (let i = 0; i < Math.min(sections.length, sceneCount); i++) {
+    const section = sections[i];
+    if (!section) continue;
+    const top = section.offsetTop;
+    const height = section.offsetHeight;
+    const scrubRange = Math.max(height - vh, 1);
+
+    if (scrollTop >= top && scrollTop < top + height) {
+      activeIndex = i;
+      scrubProgress = Math.min(1, Math.max(0, (scrollTop - top) / scrubRange));
+      return { activeIndex, scrubProgress };
+    }
+    if (scrollTop >= top + height) activeIndex = Math.min(i + 1, sceneCount - 1);
+  }
+
+  return { activeIndex, scrubProgress };
+}
+
 export function ScrollWalkthroughShell({
   scenes,
   projectName,
@@ -101,12 +136,13 @@ export function ScrollWalkthroughShell({
     highlightedAnnotationId: null,
     isTransitioning: false,
   });
-  const [scrollProgress, setScrollProgress] = useState(0);
+  const [scrubProgress, setScrubProgress] = useState(0);
   const [showHint, setShowHint] = useState(true);
   const [showRoomMenu, setShowRoomMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const lastTrackedIndex = useRef(0);
 
   const dispatch = useCallback((command: WalkthroughPlayerCommand) => {
     setPlayer((prev) => {
@@ -138,7 +174,7 @@ export function ScrollWalkthroughShell({
   useEffect(() => {
     trackScene(0);
     onSceneEvent?.("viewer_opened", { sceneCount: scenes.length });
-    const t = setTimeout(() => setShowHint(false), 4000);
+    const t = setTimeout(() => setShowHint(false), 5000);
     return () => clearTimeout(t);
   }, [scenes.length, onSceneEvent, trackScene]);
 
@@ -159,27 +195,39 @@ export function ScrollWalkthroughShell({
     if (externalAICommand.command === "HIGHLIGHT_ANNOTATION") {
       dispatch({ type: "HIGHLIGHT_ANNOTATION", annotationId: externalAICommand.annotationId });
     }
-  }, [externalAICommand, sceneIds, dispatch, onAICommand, onContact]);
+  }, [externalAICommand, sceneIds, dispatch, onAICommand, onContact, onSceneEvent]);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || player.walkMode) return;
+    if (!container) return;
 
     const onScroll = () => {
       setShowHint(false);
-      const vh = container.clientHeight;
-      const idx = Math.min(scenes.length - 1, Math.max(0, Math.round(container.scrollTop / vh)));
-      if (idx !== player.activeIndex) {
-        setPlayer((p) => ({ ...p, activeIndex: idx, activeSceneId: sceneIds[idx] ?? null }));
-        trackScene(idx);
+      const { activeIndex, scrubProgress: progress } = computeScrollState(
+        container,
+        sectionRefs.current,
+        scenes.length,
+        player.walkMode,
+      );
+
+      setScrubProgress(progress);
+
+      if (activeIndex !== lastTrackedIndex.current) {
+        lastTrackedIndex.current = activeIndex;
+        trackScene(activeIndex);
       }
-      const sectionProgress = vh > 0 ? (container.scrollTop % vh) / vh : 0;
-      setScrollProgress(sectionProgress);
+
+      setPlayer((p) => (
+        p.activeIndex === activeIndex && p.activeSceneId === sceneIds[activeIndex]
+          ? p
+          : { ...p, activeIndex, activeSceneId: sceneIds[activeIndex] ?? null }
+      ));
     };
 
     container.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
     return () => container.removeEventListener("scroll", onScroll);
-  }, [player.activeIndex, player.walkMode, scenes.length, sceneIds, trackScene]);
+  }, [player.walkMode, scenes.length, sceneIds, trackScene]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -219,6 +267,10 @@ export function ScrollWalkthroughShell({
   function scrollToScene(index: number) {
     dispatch({ type: "JUMP_TO_INDEX", index });
   }
+
+  const scrollControlled = !player.walkMode;
+  const videosReady = scenes.filter((s) => sceneVideoUrl(s, isMobile)).length;
+  const hasVideos = videosReady > 0;
 
   if (!scenes.length) {
     return <div className="flex h-[100dvh] items-center justify-center bg-black text-white">No scenes published</div>;
@@ -266,36 +318,45 @@ export function ScrollWalkthroughShell({
 
       <div ref={containerRef} className={`wt-scroll-viewer h-[100dvh] ${player.walkMode ? "wt-scroll-viewer--walk-mode" : ""}`}>
         {scenes.map((scene, i) => (
-          <div key={scene.id} ref={(el) => { sectionRefs.current[i] = el; }} className="wt-scroll-section">
-            <MotionSceneViewer
-              scene={toPropertyScene(scene, isMobile)}
-              annotations={toAnnotations(scene.walkthrough_annotations)}
-              isMobile={isMobile}
-              playing={player.playing && i === player.activeIndex}
-              videoUrl={sceneVideoUrl(scene, isMobile)}
-              posterUrl={scene.poster_url ?? scene.thumbnail_url}
-              highlightedAnnotationId={player.highlightedAnnotationId}
-              onProgress={i === player.activeIndex ? setScrollProgress : undefined}
-              onAnnotationClick={(ann) => {
-                dispatch({ type: "HIGHLIGHT_ANNOTATION", annotationId: ann.id });
-                onSceneEvent?.("annotation_clicked", { sceneId: scene.id, annotationId: ann.id, title: ann.title });
-                const wtAnn = scene.walkthrough_annotations?.find((a) => a.id === ann.id);
-                if (wtAnn) onAnnotationClick?.(wtAnn);
-              }}
-            />
-            <div className="wt-scene-caption">
-              <h2>{scene.title}</h2>
-              {scene.caption && <p>{scene.caption}</p>}
+          <div
+            key={scene.id}
+            ref={(el) => { sectionRefs.current[i] = el; }}
+            className={`wt-scroll-section ${scrollControlled ? "wt-scroll-section--scrub" : ""}`}
+          >
+            <div className="wt-scroll-section-sticky">
+              <MotionSceneViewer
+                scene={toPropertyScene(scene, isMobile)}
+                annotations={toAnnotations(scene.walkthrough_annotations)}
+                isMobile={isMobile}
+                playing={player.playing && (player.walkMode ? i === player.activeIndex : false)}
+                videoUrl={sceneVideoUrl(scene, isMobile)}
+                posterUrl={scene.poster_url ?? scene.thumbnail_url}
+                highlightedAnnotationId={player.highlightedAnnotationId}
+                scrubProgress={scrollControlled && i === player.activeIndex ? scrubProgress : 0}
+                scrollControlled={scrollControlled}
+                onAnnotationClick={(ann) => {
+                  dispatch({ type: "HIGHLIGHT_ANNOTATION", annotationId: ann.id });
+                  onSceneEvent?.("annotation_clicked", { sceneId: scene.id, annotationId: ann.id, title: ann.title });
+                  const wtAnn = scene.walkthrough_annotations?.find((a) => a.id === ann.id);
+                  if (wtAnn) onAnnotationClick?.(wtAnn);
+                }}
+              />
+              <div className="wt-scroll-section-caption">
+                <h2>{scene.title}</h2>
+                {scene.caption && <p>{scene.caption}</p>}
+              </div>
             </div>
           </div>
         ))}
-        <div className="wt-scroll-section flex items-center justify-center bg-zinc-900 px-6">
-          <div className="text-center text-white">
-            <h2 className="text-xl font-semibold sm:text-2xl">Interested in this property?</h2>
-            <p className="mt-2 text-sm text-white/70">Contact our sales team to schedule a visit.</p>
-            <button type="button" className="wt-viewer-btn wt-viewer-btn--primary mt-6 px-8" onClick={() => onContact?.() ?? onSceneEvent?.("contact_clicked", {})}>
-              Contact sales
-            </button>
+        <div className={`wt-scroll-section ${scrollControlled ? "wt-scroll-section--scrub" : ""} flex items-center justify-center bg-zinc-900`}>
+          <div className="wt-scroll-section-sticky flex items-center justify-center px-6">
+            <div className="text-center text-white">
+              <h2 className="text-xl font-semibold sm:text-2xl">Interested in this property?</h2>
+              <p className="mt-2 text-sm text-white/70">Contact our sales team to schedule a visit.</p>
+              <button type="button" className="wt-viewer-btn wt-viewer-btn--primary mt-6 px-8" onClick={() => onContact?.() ?? onSceneEvent?.("contact_clicked", {})}>
+                Contact sales
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -303,7 +364,11 @@ export function ScrollWalkthroughShell({
       {showHint && player.activeIndex === 0 && (
         <div className="wt-scroll-hint">
           <ChevronDown className="h-5 w-5" />
-          <span>{isMobile ? (player.walkMode ? "Swipe to explore" : "Scroll for details · enable Walk Mode to explore") : "Scroll or use W/A/S/D to explore"}</span>
+          <span>
+            {isMobile
+              ? (player.walkMode ? "Swipe to move between rooms" : "Scroll to walk through · toggle Walk Mode to jump rooms")
+              : (player.walkMode ? "W/A/S/D or arrows to explore" : hasVideos ? "Scroll to scrub through each room video" : "Scroll to walk through the property")}
+          </span>
         </div>
       )}
 
@@ -319,6 +384,7 @@ export function ScrollWalkthroughShell({
             className={`wt-viewer-btn ${player.walkMode ? "wt-viewer-btn--primary" : ""}`}
             onClick={() => dispatch({ type: "SET_WALK_MODE", enabled: !player.walkMode })}
             aria-label="Toggle walk mode"
+            title={player.walkMode ? "Walk mode on" : "Walk mode off — scroll scrubs video"}
           >
             <Footprints className="h-5 w-5" />
           </button>
@@ -330,9 +396,11 @@ export function ScrollWalkthroughShell({
           >
             <LayoutGrid className="h-5 w-5" />
           </button>
-          <button type="button" className="wt-viewer-btn" onClick={() => dispatch({ type: "SET_PLAYING", playing: !player.playing })} aria-label={player.playing ? "Pause" : "Play"}>
-            {player.playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-          </button>
+          {player.walkMode && (
+            <button type="button" className="wt-viewer-btn" onClick={() => dispatch({ type: "SET_PLAYING", playing: !player.playing })} aria-label={player.playing ? "Pause" : "Play"}>
+              {player.playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+            </button>
+          )}
           {onAskAI && (
             <button type="button" className="wt-viewer-btn wt-viewer-btn--primary" onClick={onAskAI} aria-label="Ask AI">
               <MessageSquare className="h-5 w-5" />
@@ -350,7 +418,10 @@ export function ScrollWalkthroughShell({
       </div>
 
       <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-30 h-0.5 bg-white/15">
-        <div className="h-full bg-white transition-[width] duration-150" style={{ width: `${((player.activeIndex + scrollProgress) / Math.max(scenes.length, 1)) * 100}%` }} />
+        <div
+          className="h-full bg-white transition-[width] duration-75"
+          style={{ width: `${((player.activeIndex + scrubProgress) / Math.max(scenes.length, 1)) * 100}%` }}
+        />
       </div>
     </div>
   );

@@ -24,6 +24,8 @@ export function MotionSceneViewer({
   videoUrl,
   posterUrl,
   highlightedAnnotationId,
+  scrubProgress,
+  scrollControlled = false,
   onProgress,
   onAnnotationClick,
 }: {
@@ -34,34 +36,69 @@ export function MotionSceneViewer({
   videoUrl?: string | null;
   posterUrl?: string | null;
   highlightedAnnotationId?: string | null;
+  /** 0–1 progress driven by scroll (scroll-controlled walkthrough) */
+  scrubProgress?: number;
+  scrollControlled?: boolean;
   onProgress?: (progress: number) => void;
   onAnnotationClick?: (ann: SceneAnnotationRecord) => void;
 }) {
-  const [progress, setProgress] = useState(0);
+  const [autoProgress, setAutoProgress] = useState(0);
   const startRef = useRef<number | null>(null);
   const rafRef = useRef<number>(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const duration = (scene.motion_config?.duration ?? scene.duration ?? 8) * 1000;
   const motionType = (scene.motion_type ?? "push_in") as MotionType;
   const keyframes = getMotionKeyframes(motionType, scene.motion_config?.intensity ?? 1);
+  const progress = scrubProgress ?? autoProgress;
   const frame = interpolateMotion(keyframes, progress);
   const crop = (isMobile ? scene.mobile_crop : scene.desktop_crop) as CropRect ?? { x: 0, y: 0, width: 1, height: 1 };
   const imageUrl = scene.edited_image_url || scene.image_url;
   const playbackUrl = videoUrl ?? null;
+  const isScrubMode = scrollControlled && scrubProgress != null;
 
   useEffect(() => {
-    if (playbackUrl || !playing) return;
+    onProgress?.(progress);
+  }, [progress, onProgress]);
+
+  useEffect(() => {
+    if (playbackUrl || isScrubMode || !playing) return;
     startRef.current = performance.now();
     const tick = (now: number) => {
       if (!startRef.current) return;
       const p = ((now - startRef.current) % duration) / duration;
-      setProgress(p);
-      onProgress?.(p);
+      setAutoProgress(p);
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [playing, duration, scene.id, onProgress, playbackUrl]);
+  }, [playing, duration, scene.id, playbackUrl, isScrubMode]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !playbackUrl) return;
+
+    const applyScrub = () => {
+      if (!video.duration || !Number.isFinite(video.duration)) return;
+      const target = Math.min(video.duration - 0.05, Math.max(0, progress * video.duration));
+      if (Math.abs(video.currentTime - target) > 0.04) {
+        video.currentTime = target;
+      }
+    };
+
+    if (isScrubMode) {
+      video.pause();
+      if (video.readyState >= 1) applyScrub();
+      else video.addEventListener("loadedmetadata", applyScrub, { once: true });
+      return () => video.removeEventListener("loadedmetadata", applyScrub);
+    }
+
+    if (playing) {
+      void video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  }, [progress, playbackUrl, isScrubMode, playing]);
 
   const imgTransform = `scale(${frame.scale}) translate(${frame.translateX}%, ${frame.translateY}%) rotate(${frame.rotate}deg)`;
 
@@ -70,13 +107,15 @@ export function MotionSceneViewer({
       <div className="absolute inset-0 flex items-center justify-center">
         {playbackUrl ? (
           <video
+            ref={videoRef}
             src={playbackUrl}
             poster={posterUrl ?? imageUrl}
             className="h-full w-full object-cover"
-            autoPlay={playing}
+            autoPlay={!isScrubMode && playing}
             muted
-            loop
+            loop={!isScrubMode}
             playsInline
+            preload="auto"
           />
         ) : (
           /* eslint-disable-next-line @next/next/no-img-element */
@@ -100,7 +139,7 @@ export function MotionSceneViewer({
           <button
             key={ann.id}
             type="button"
-            className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary/90 shadow-lg hover:scale-110 ${highlightedAnnotationId === ann.id ? "scale-125 animate-pulse ring-4 ring-yellow-300" : "animate-pulse"} ${isMobile ? "wt-pin-mobile p-2" : "p-1.5"}`}
+            className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary/90 shadow-lg hover:scale-110 ${highlightedAnnotationId === ann.id ? "scale-125 animate-pulse ring-4 ring-yellow-300" : ""} ${isMobile ? "wt-pin-mobile p-2" : "p-1.5"}`}
             style={{ left: pos.left, top: pos.top }}
             onClick={() => onAnnotationClick?.(ann)}
             aria-label={ann.title}

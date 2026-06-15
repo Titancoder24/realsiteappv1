@@ -247,6 +247,42 @@
   position: relative;
 }
 
+.wt-scroll-section--scrub {
+  height: 280vh;
+  min-height: 280vh;
+}
+
+.wt-scroll-section-sticky {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+}
+
+.wt-scroll-section-caption {
+  position: absolute;
+  bottom: 5rem;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  padding: 0 1.25rem;
+  pointer-events: none;
+  color: #fff;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 0.6);
+}
+
+.wt-scroll-section-caption h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.wt-scroll-section-caption p {
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  color: rgb(255 255 255 / 0.75);
+}
+
 .wt-viewer-header {
   position: absolute;
   left: 0;

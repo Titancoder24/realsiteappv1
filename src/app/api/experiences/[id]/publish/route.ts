@@ -22,6 +22,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       if (!checklist.property_rag_added) {
         return jsonError("Add at least 3 property knowledge entries before publishing", 400);
       }
+      if (!checklist.motion_videos_generated) {
+        return jsonError("Generate Veo motion clips for all scenes before publishing", 400);
+      }
     }
 
     const publishedUrl = exp.type === "cinematic_walkthrough"

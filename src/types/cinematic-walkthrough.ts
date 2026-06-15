@@ -166,14 +166,14 @@ export const WALKTHROUGH_MOTION_PRESETS: { type: WalkthroughMotionType; label: s
 ];
 
 export const WALKTHROUGH_WIZARD_STEPS = [
-  { id: "upload", label: "Upload property images" },
-  { id: "enhance", label: "Enhance image quality" },
-  { id: "scenes", label: "Analyze & plan scenes" },
-  { id: "arrange", label: "Arrange walkthrough" },
-  { id: "motion", label: "Generate motion assets" },
+  { id: "upload", label: "Upload listing photos" },
+  { id: "enhance", label: "Upscale & clean images" },
+  { id: "scenes", label: "AI scene plan (Gemini)" },
+  { id: "arrange", label: "Arrange room flow" },
+  { id: "motion", label: "Veo video motion" },
   { id: "pins", label: "Add annotations" },
-  { id: "rag", label: "Add property knowledge" },
-  { id: "preview", label: "Test AI & preview" },
+  { id: "rag", label: "Property knowledge" },
+  { id: "preview", label: "Scroll preview" },
   { id: "publish", label: "Publish walkthrough" },
 ] as const;
 
