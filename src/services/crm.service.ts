@@ -118,20 +118,41 @@ export class CRMService {
       .maybeSingle();
 
     if (existing) {
-      await supabase.from("leads").update({
+      const { data: updated, error } = await supabase.from("leads").update({
         name: params.name,
         session_id: params.sessionId,
+        property_id: params.propertyId,
         last_visit: new Date().toISOString(),
         total_sessions: (existing.total_sessions ?? 1) + 1,
         updated_at: new Date().toISOString(),
-      }).eq("id", existing.id);
-      return existing;
+      }).eq("id", existing.id).select("id").single();
+      if (error) throw error;
+      return updated ?? existing;
     }
 
-    return this.createLead({
-      ...params,
-      source: "brochure",
-    });
+    try {
+      return await this.createLead({ ...params, source: "brochure" });
+    } catch (err) {
+      const { data: raced } = await supabase
+        .from("leads")
+        .select("id")
+        .eq("organization_id", params.organizationId)
+        .eq("phone", params.phone)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (raced) {
+        await supabase.from("leads").update({
+          name: params.name,
+          session_id: params.sessionId,
+          property_id: params.propertyId,
+          last_visit: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq("id", raced.id);
+        return raced;
+      }
+      throw err;
+    }
   }
 }
 

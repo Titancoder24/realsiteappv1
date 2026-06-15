@@ -51,6 +51,33 @@ export async function POST(req: Request) {
       ? Math.floor((Date.now() - new Date(priorSessions[0].started_at).getTime()) / 86400000)
       : 0;
 
+    // Session row must exist before lead insert (leads.session_id FK → buyer_sessions.id)
+    const { error: sessionInsertError } = await admin.from("buyer_sessions").insert({
+      id: sessionId,
+      organization_id: body.organizationId,
+      property_id: body.propertyId,
+      brochure_id: body.brochureId,
+      device: deviceInfo.device,
+      browser: deviceInfo.browser,
+      os: deviceInfo.os,
+      screen_width: body.screenWidth,
+      screen_height: body.screenHeight,
+      consent_given: true,
+      ip_hash: ipHash,
+      viewer_name: body.viewerName.trim(),
+      viewer_phone: phone,
+      viewer_phone_hash: phoneHash,
+      utm_source: body.utmSource,
+      utm_medium: body.utmMedium,
+      utm_campaign: body.utmCampaign,
+      metadata: {
+        ...(body.referrerSessionId ? { shared_from_session: body.referrerSessionId } : {}),
+        ...(isReopen ? { reopen: true, days_since_last: daysSinceLast } : { first_visit: true }),
+      },
+    });
+
+    if (sessionInsertError) throw new Error(sessionInsertError.message);
+
     const lead = await crmService.findOrCreateLeadByPhone({
       organizationId: body.organizationId,
       propertyId: body.propertyId,
@@ -59,6 +86,8 @@ export async function POST(req: Request) {
       phone,
       campaign: body.utmCampaign,
     });
+
+    await admin.from("buyer_sessions").update({ lead_id: lead.id }).eq("id", sessionId);
 
     const { data: existingProfile } = await admin
       .from("brochure_viewer_profiles")
@@ -77,41 +106,24 @@ export async function POST(req: Request) {
         total_sessions: (existingProfile.total_sessions ?? 1) + 1,
       }).eq("id", existingProfile.id);
     } else {
-      const { data: createdProfile } = await admin.from("brochure_viewer_profiles").insert({
+      const { data: createdProfile, error: profileError } = await admin.from("brochure_viewer_profiles").insert({
         organization_id: body.organizationId,
         viewer_name: body.viewerName.trim(),
         viewer_phone: phone,
         viewer_phone_hash: phoneHash,
         lead_id: lead.id,
       }).select("id").single();
+      if (profileError) throw new Error(profileError.message);
       viewerProfileId = createdProfile?.id;
     }
 
-    await admin.from("buyer_sessions").insert({
-      id: sessionId,
-      organization_id: body.organizationId,
-      property_id: body.propertyId,
-      brochure_id: body.brochureId,
-      lead_id: lead.id,
-      device: deviceInfo.device,
-      browser: deviceInfo.browser,
-      os: deviceInfo.os,
-      screen_width: body.screenWidth,
-      screen_height: body.screenHeight,
-      consent_given: true,
-      ip_hash: ipHash,
-      viewer_name: body.viewerName.trim(),
-      viewer_phone: phone,
-      viewer_phone_hash: phoneHash,
-      utm_source: body.utmSource,
-      utm_medium: body.utmMedium,
-      utm_campaign: body.utmCampaign,
+    await admin.from("buyer_sessions").update({
       metadata: {
         ...(body.referrerSessionId ? { shared_from_session: body.referrerSessionId } : {}),
         ...(isReopen ? { reopen: true, days_since_last: daysSinceLast } : { first_visit: true }),
         viewer_profile_id: viewerProfileId,
       },
-    });
+    }).eq("id", sessionId);
 
     const openEvent = body.referrerSessionId
       ? "brochure_shared_open"
@@ -134,16 +146,25 @@ export async function POST(req: Request) {
       },
     });
 
-    await brochureIntentService.refreshSessionIntent(sessionId, body.brochureId, body.propertyId, body.organizationId);
+    try {
+      await brochureIntentService.refreshSessionIntent(sessionId, body.brochureId, body.propertyId, body.organizationId);
+    } catch {
+      // Non-blocking: viewer can open brochure even if intent scoring fails
+    }
 
     return NextResponse.json({
       sessionId,
       leadId: lead.id,
       isReopen,
       daysSinceLast,
-      viewerProfileId: viewerProfileId,
+      viewerProfileId,
     });
   } catch (err) {
-    return jsonError(err instanceof Error ? err.message : "Session failed", 500);
+    if (err instanceof z.ZodError) {
+      return jsonError(err.errors[0]?.message ?? "Invalid request", 400);
+    }
+    const message = err instanceof Error ? err.message : "Session failed";
+    console.error("[brochure/session]", message);
+    return jsonError(message, 500);
   }
 }
