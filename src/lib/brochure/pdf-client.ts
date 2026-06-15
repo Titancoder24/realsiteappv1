@@ -8,6 +8,14 @@ export async function getPdfjs() {
   if (!pdfjsModule) {
     pdfjsModule = await import("pdfjs-dist");
     pdfjsModule.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    try {
+      const probe = await fetch("/pdf.worker.min.mjs", { method: "HEAD" });
+      if (!probe.ok) {
+        pdfjsModule.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
+      }
+    } catch {
+      pdfjsModule.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
+    }
   }
   return pdfjsModule;
 }
