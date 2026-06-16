@@ -1,5 +1,5 @@
-import { BrochureIntelligenceDashboard } from "@/components/brochure/brochure-intelligence-dashboard";
+import { redirect } from "next/navigation";
 
-export default function BrochureIntelligencePage() {
-  return <BrochureIntelligenceDashboard />;
+export default function BrochureIntelligenceIndexPage() {
+  redirect("/dashboard/brochure-intelligence/upload");
 }

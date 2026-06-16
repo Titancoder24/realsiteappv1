@@ -393,6 +393,72 @@ export class BrochureIntentService {
       brochures: brochures ?? [],
     };
   }
+
+  async getSessionDetail(sessionId: string, organizationId: string) {
+    const admin = createAdminClient();
+
+    const { data: session, error } = await admin
+      .from("buyer_sessions")
+      .select("id, brochure_id, lead_id, device, browser, os, screen_width, screen_height, started_at, ended_at, property_id, utm_source, utm_medium, utm_campaign, viewer_name, viewer_phone, viewer_phone_hash, metadata")
+      .eq("id", sessionId)
+      .eq("organization_id", organizationId)
+      .single();
+
+    if (error || !session) throw new Error("Session not found");
+
+    const [
+      { data: brochure },
+      { data: pageViews },
+      { data: heatmapPoints },
+      { data: events },
+      { data: intentSummary },
+      { data: viewerHistory },
+    ] = await Promise.all([
+      admin.from("property_brochures").select("id, title, slug, page_count, property_id, properties(name)").eq("id", session.brochure_id).single(),
+      admin.from("brochure_page_views").select("page_number, page_category, dwell_seconds, scroll_depth_max, zoom_level_max, entered_at, exited_at").eq("session_id", sessionId).order("page_number"),
+      admin.from("brochure_heatmap_points").select("page_number, x, y, event_type, dwell_seconds, created_at").eq("session_id", sessionId).order("created_at"),
+      admin.from("brochure_viewer_events").select("event_type, page_number, payload, created_at").eq("session_id", sessionId).order("created_at"),
+      admin.from("brochure_intent_summaries").select("*").eq("session_id", sessionId).maybeSingle(),
+      session.viewer_phone_hash
+        ? admin.from("buyer_sessions").select("id, started_at, brochure_id, metadata").eq("organization_id", organizationId).eq("viewer_phone_hash", session.viewer_phone_hash).neq("id", sessionId).order("started_at", { ascending: false }).limit(10)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const historyBrochureIds = [...new Set((viewerHistory ?? []).map((s) => s.brochure_id).filter(Boolean))];
+    const { data: historyBrochures } = historyBrochureIds.length
+      ? await admin.from("property_brochures").select("id, title").in("id", historyBrochureIds)
+      : { data: [] };
+    const historyBrochureMap = new Map((historyBrochures ?? []).map((b) => [b.id, b.title]));
+
+    return {
+      session,
+      brochure: brochure ?? null,
+      pageViews: pageViews ?? [],
+      heatmapPoints: heatmapPoints ?? [],
+      events: events ?? [],
+      intentSummary: intentSummary ?? null,
+      viewerHistory: (viewerHistory ?? []).map((s) => ({
+        sessionId: s.id,
+        startedAt: s.started_at,
+        brochureTitle: historyBrochureMap.get(s.brochure_id ?? "") ?? "Brochure",
+        isReopen: Boolean((s.metadata as { reopen?: boolean })?.reopen),
+      })),
+    };
+  }
+
+  async getFilteredHeatmaps(organizationId: string, filters: { brochureId?: string; sessionId?: string }) {
+    const admin = createAdminClient();
+    let query = admin
+      .from("brochure_heatmap_points")
+      .select("page_number, x, y, brochure_id, session_id, event_type, dwell_seconds")
+      .eq("organization_id", organizationId);
+
+    if (filters.brochureId) query = query.eq("brochure_id", filters.brochureId);
+    if (filters.sessionId) query = query.eq("session_id", filters.sessionId);
+
+    const { data } = await query.limit(10000);
+    return data ?? [];
+  }
 }
 
 export const brochureIntentService = new BrochureIntentService();
