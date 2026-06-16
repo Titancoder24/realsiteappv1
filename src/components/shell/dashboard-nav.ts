@@ -6,7 +6,7 @@ import {
   Camera,
   Compass,
   FileStack,
-  FileText,
+  Upload,
   LayoutDashboard,
   MapPinned,
   Megaphone,
@@ -55,9 +55,17 @@ export const DASHBOARD_NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Brochure Intelligence",
+    items: [
+      { href: "/dashboard/brochure-intelligence/upload", label: "Upload & Links", icon: Upload, minRole: "sales_agent" },
+      { href: "/dashboard/brochure-intelligence/overview", label: "Intelligence", icon: BarChart3, minRole: "sales_agent" },
+      { href: "/dashboard/brochure-intelligence/viewers", label: "Identified Viewers", icon: UserRoundSearch, minRole: "sales_agent" },
+      { href: "/dashboard/brochure-intelligence/heatmaps", label: "Heatmaps", icon: MapPinned, minRole: "sales_agent" },
+    ],
+  },
+  {
     label: "Sales & AI",
     items: [
-      { href: "/dashboard/brochure-intelligence", label: "Brochure Intelligence", icon: FileText, minRole: "sales_agent" },
       { href: "/dashboard/knowledge", label: "Property Intel", icon: FileStack, minRole: "project_manager" },
       { href: "/dashboard/ai-agent", label: "Voice Concierge", icon: Mic2, minRole: "project_manager" },
       { href: "/dashboard/leads", label: "Lead Pipeline", shortLabel: "Leads", icon: UserRoundSearch, minRole: "sales_agent", mobileTab: true },
